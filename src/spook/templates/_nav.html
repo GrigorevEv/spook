@@ -1,0 +1,5 @@
+<nav aria-label="Экраны">
+  {% for href, title in [("/", "Сессия"), ("/notes", "Заметки"), ("/settings", "Настройки")] %}
+  {% if title == current %}<span aria-current="page">{{ title }}</span>{% else %}<a href="{{ href }}">{{ title }}</a>{% endif %}
+  {% endfor %}
+</nav>

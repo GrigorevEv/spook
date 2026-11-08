@@ -1,0 +1,52 @@
+{# Строка Сессии на экране «Заметки». Пока Агент в очереди или работает, строка сама обновляется
+   с сервера; формы перезапуска в ней в это время нет, так что обновление ничего не сбрасывает. #}
+<tr class="note" data-kind="{{ entry.kind.value }}" data-summary="{{ entry.summary.value }}"
+    {% if entry.agent_busy %}hx-get="/notes/row?note={{ entry.path|string|urlencode }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  <td><time>{{ entry.started }}</time></td>
+  <td>{% if entry.topic %}{{ entry.topic }}{% else %}<span class="no-topic">без Темы</span>{% endif %}</td>
+  <td>{{ entry.kind.label }}</td>
+  <td>{{ entry.duration or "—" }}</td>
+  <td>
+    {% if entry.in_session %}<span class="summary">Сессия идёт</span>
+    {% else %}<span class="summary">{{ entry.summary.label }}</span>{% endif %}
+    {% if entry.message %}<span class="error">{{ entry.message }}</span>{% endif %}
+    {% if entry.warning %}<span class="warning">{{ entry.warning }}</span>{% endif %}
+  </td>
+  <td class="actions"><div class="row-actions">
+    <form hx-post="/notes/obsidian" hx-target="#notice" hx-swap="innerHTML">
+      <input type="hidden" name="note" value="{{ entry.path }}">
+      <button type="submit">Открыть в Obsidian</button>
+    </form>
+    {% if entry.kind.value == "lecture" %}
+    <form hx-post="/notes/wiki" hx-target="#notice" hx-swap="innerHTML">
+      <input type="hidden" name="note" value="{{ entry.path }}">
+      <button type="submit">Открыть страницу Вики</button>
+    </form>
+    {% endif %}
+    {% if entry.has_log %}<a class="log" href="/agent/log?note={{ entry.name|urlencode }}&amp;kind={{ entry.log_kind.value }}">Журнал</a>{% endif %}
+    {% if not entry.in_session and not entry.agent_busy %}
+    {% set choice = agent_choices[entry.kind.value] %}
+    <details class="agent-run">
+      <summary>{{ "Перезапустить Агента" if entry.has_summary else "Запустить Агента" }}</summary>
+      <form hx-post="/notes/agent" hx-target="#notice" hx-swap="innerHTML">
+        <input type="hidden" name="note" value="{{ entry.path }}">
+        <label class="field"><span>Модель</span>
+          <select name="model">
+            {% for model in choice.models %}<option value="{{ model }}"{% if model == choice.model %} selected{% endif %}>{{ model }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="field"><span>Effort</span>
+          <select name="effort">
+            {% for effort in choice.efforts %}<option value="{{ effort }}"{% if effort == choice.effort %} selected{% endif %}>{{ effort }}</option>{% endfor %}
+          </select>
+        </label>
+        {% if entry.has_summary %}
+        <p class="warning">{{ rewrite_warning }}.</p>
+        <label class="confirm"><input type="checkbox" name="confirm" value="yes" required> понимаю, запустить заново</label>
+        {% endif %}
+        <button type="submit">Запустить</button>
+      </form>
+    </details>
+    {% endif %}
+  </div></td>
+</tr>

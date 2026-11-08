@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Spook — Сессия</title>
+  {# htmx по умолчанию не вставляет ответы 4xx; отказ команды (409) с причиной показывать нужно. #}
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"[23]..","swap":true},{"code":"409","swap":true},{"code":"[45]..","swap":false,"error":true},{"code":"...","swap":false}]}'>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/spook.css">
+  <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/htmx-ext-sse.js" defer></script>
+  <script src="/static/spook.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>Spook</h1>
+    {% with current = "Сессия" %}{% include "_nav.html" %}{% endwith %}
+  </header>
+  {# Слева — панель состояния и управления, справа — колонка Живого текста; у каждой своя прокрутка. #}
+  <main class="session" hx-ext="sse" sse-connect="/events">
+    <aside class="panel">
+      <section id="session" aria-label="Состояние Сессии" sse-swap="state">
+        {% include "_state.html" %}
+      </section>
+      <p id="notice" role="alert"></p>
+      {# Предупреждения стоят под Источниками, перед Агентом (docs/look.md); у каждого — своя цель для потока событий. #}
+      <section id="warnings" aria-label="Предупреждения">
+        <div id="backlog" sse-swap="backlog">
+          {% include "_backlog.html" %}
+        </div>
+      </section>
+      <section id="agent" aria-label="Агент" sse-swap="agent">
+        {% with jobs = view.agent %}{% include "_agent.html" %}{% endwith %}
+      </section>
+    </aside>
+    <div class="live" id="live">
+      <section id="transcript" aria-label="Живой текст" sse-swap="transcript">
+        {% include "_transcript.html" %}
+      </section>
+      <p class="placeholder">Живой текст появится здесь после «Старт»…</p>
+    </div>
+    <div sse-swap="paragraph" hx-target="#transcript" hx-swap="beforeend" hidden></div>
+    {# Продолжение абзаца приходит с hx-swap-oob и заменяет абзац по id; самому приёмнику вставлять нечего. #}
+    <div sse-swap="paragraph-update" hx-swap="none" hidden></div>
+    <div sse-swap="mark" hx-target="#transcript" hx-swap="beforeend" hidden></div>
+    {# Уровни приходят JSON-событием `levels`; индикаторы двигает spook.js по событию `sse:levels`. #}
+    <div id="levels" hx-trigger="sse:levels" hidden></div>
+  </main>
+</body>
+</html>

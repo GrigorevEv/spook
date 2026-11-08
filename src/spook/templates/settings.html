@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Spook — Настройки</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/spook.css">
+</head>
+<body>
+  <header>
+    <h1>Spook</h1>
+    {% with current = "Настройки" %}{% include "_nav.html" %}{% endwith %}
+  </header>
+  <main class="settings">
+    {% macro error(name) %}{% if errors.get(name) %}<p class="field-error" id="{{ name }}-error" role="alert">{{ errors[name] }}</p>{% endif %}{% endmacro %}
+    {% macro text_field(name, label, list="") %}
+    <label for="{{ name }}">{{ label }}</label>
+    <input type="text" id="{{ name }}" name="{{ name }}" value="{{ values[name] }}"{% if list %} list="{{ list }}"{% endif %}{% if errors.get(name) %} aria-invalid="true" aria-describedby="{{ name }}-error"{% endif %}>
+    {{ error(name) }}
+    {% endmacro %}
+    {% if saved %}<p class="saved" role="status">Настройки сохранены. Действуют со следующей Сессии и следующего запуска Агента.</p>{% endif %}
+    {% if errors.get("") %}<p class="field-error" role="alert">{{ errors[""] }}</p>{% endif %}
+    {% if errors %}<p class="field-error" role="alert">Настройки не сохранены: исправьте отмеченные поля.</p>{% endif %}
+    <form method="post" action="/settings">
+      <datalist id="models">{% for model in models %}<option value="{{ model }}"></option>{% endfor %}</datalist>
+      {% for kind in kinds %}
+      <section aria-labelledby="{{ kind.value }}-title">
+        <h2 id="{{ kind.value }}-title">{{ kind.label }}</h2>
+        {{ text_field(kind.value ~ ".folder", "Папка Заметок") }}
+        <p class="hint">Права Агента здесь не задаются: они записаны отдельно, в шапке Скилла.</p>
+        {{ text_field(kind.value ~ ".skill", "Скилл") }}
+        {{ text_field(kind.value ~ ".model", "Модель Агента", list="models") }}
+        {% set effort_name = kind.value ~ ".effort" %}
+        <label for="{{ effort_name }}">Effort Агента</label>
+        <select id="{{ effort_name }}" name="{{ effort_name }}">
+          {# Неизвестное значение из файла тоже видно: сохранить его экран не даст, но и не подменит молча. #}
+          {% for effort in (efforts if values[effort_name] in efforts else efforts + (values[effort_name],)) %}<option value="{{ effort }}"{% if effort == values[effort_name] %} selected{% endif %}>{{ effort }}</option>{% endfor %}
+        </select>
+        {{ error(effort_name) }}
+      </section>
+      {% endfor %}
+      <section aria-labelledby="sources-title">
+        <h2 id="sources-title">Источники</h2>
+        {% for choice in sources %}
+        {% set name = "sources." ~ choice.source.value %}
+        <label for="{{ name }}">{{ choice.source.label }}</label>
+        <select id="{{ name }}" name="{{ name }}">
+          {% for value, label in choice.options %}<option value="{{ value }}"{% if value == values[name] %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        {% if choice.problem %}<p class="hint">{{ choice.problem }}</p>{% endif %}
+        {{ error(name) }}
+        {% endfor %}
+      </section>
+      <section aria-labelledby="auto-stop-title">
+        <h2 id="auto-stop-title">Автостоп</h2>
+        {{ text_field("auto_stop_minutes", "Минут тишины до автостопа") }}
+      </section>
+      <section aria-labelledby="terms-title">
+        <h2 id="terms-title">Словарь терминов</h2>
+        {{ text_field("terms_dictionary", "Путь к файлу") }}
+      </section>
+      <button type="submit"{% if not can_save %} disabled{% endif %}>Сохранить</button>
+      <p class="hint">Действует со следующей Сессии</p>
+    </form>
+  </main>
+</body>
+</html>

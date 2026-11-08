@@ -1,0 +1,39 @@
+[project]
+name = "spook"
+version = "0.1.0"
+description = "Личный инструмент: звук → текст → Заметка → Выжимка Агентом"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+    "numpy>=1.26",
+    "onnx-asr[cpu,hub]>=0.12",
+]
+
+[project.scripts]
+spook = "spook.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",
+    "playwright>=1.64.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Быстрые тесты идут без сети и без PipeWire; медленные включаются явно: `-m slow`, `-m pipewire`, `-m browser`,
+# настоящий Claude Code (тратит лимиты подписки) — `-m claude`.
+addopts = "--strict-markers -m 'not slow and not pipewire and not browser and not claude'"
+markers = [
+    "slow: медленные тесты — настоящая модель распознавания",
+    "pipewire: нужен PipeWire и виртуальные устройства",
+    "browser: нужен браузер Playwright",
+    "claude: настоящий Claude Code по подписке, нужен VPN",
+]

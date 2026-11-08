@@ -1,0 +1,7 @@
+{% if view.backlog_visible %}
+{% if view.state.value == "finishing" %}
+<p class="warning backlog">Дорабатывается очередь распознавания: осталось {{ view.backlog_label }}.</p>
+{% else %}
+<p class="warning backlog">Отставание распознавания {{ view.backlog_label }}. Текст появится позже, ничего не теряется.</p>
+{% endif %}
+{% endif %}

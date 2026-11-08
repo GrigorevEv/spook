@@ -1,0 +1,24 @@
+{# Блок Агента на экране «Сессия»: Заметка, состояние Выжимки и кнопки открытия — те же команды, что на экране «Заметки». #}
+{% for job in jobs %}
+<div class="agent-job" data-summary="{{ job.state.value }}">
+  <p class="label">Заметка</p>
+  <p class="note-name">{{ job.note_name }}</p>
+  <p class="agent-state">Агент: <span class="summary">{{ job.state.label }}{% if job.state.value == "running" %}…{% endif %}</span></p>
+  {% if job.message %}<p class="error">{{ job.message }}</p>{% endif %}
+  {% if job.state.value == "failed" %}<p class="hint">Перезапустить Агента можно на экране <a href="/notes">«Заметки»</a></p>{% endif %}
+  {% if job.warning %}<p class="warning">{{ job.warning }}</p>{% endif %}
+  <div class="links">
+    <form hx-post="/notes/obsidian" hx-target="#notice" hx-swap="innerHTML">
+      <input type="hidden" name="note" value="{{ job.job.note_path }}">
+      <button type="submit">Открыть в Obsidian</button>
+    </form>
+    {% if job.job.kind.value == "lecture" and job.state.value == "done" %}
+    <form hx-post="/notes/wiki" hx-target="#notice" hx-swap="innerHTML">
+      <input type="hidden" name="note" value="{{ job.job.note_path }}">
+      <button type="submit">Открыть страницу Вики</button>
+    </form>
+    {% endif %}
+    {% if job.has_log %}<a href="/agent/log?note={{ job.note_name|urlencode }}&amp;kind={{ job.job.kind.value }}">Журнал</a>{% endif %}
+  </div>
+</div>
+{% endfor %}

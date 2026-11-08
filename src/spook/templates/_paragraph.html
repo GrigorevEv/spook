@@ -1,0 +1,3 @@
+{# `replace` — абзац уже на странице: htmx заменяет его по id (hx-swap-oob), а не добавляет в конец. #}
+{# Во Встрече после времени стоит пометка говорящего; класс — Источник, чтобы «Я» можно было выделить цветом. #}
+<p class="paragraph" id="{{ paragraph.element_id }}"{% if replace %} hx-swap-oob="true"{% endif %}><time>{{ paragraph.label }}</time> {% if paragraph.speaker %}<b class="speaker {{ paragraph.source.value }}">{{ paragraph.speaker }}</b> {% endif %}{{ paragraph.text }}</p>

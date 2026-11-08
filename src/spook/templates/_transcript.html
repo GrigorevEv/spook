@@ -1,0 +1,9 @@
+{% for entry in view.entries %}
+{% if entry is mark %}
+{% set mark = entry %}
+{% include "_mark.html" %}
+{% else %}
+{% set paragraph = entry %}
+{% include "_paragraph.html" %}
+{% endif %}
+{% endfor %}

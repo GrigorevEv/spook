@@ -1,0 +1,17 @@
+# Окружение и кэши Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Снимки и отчёты браузерных тестов
+test-results/
+playwright-report/
+
+# Локальные настройки агентов
+.claude/worktrees/
