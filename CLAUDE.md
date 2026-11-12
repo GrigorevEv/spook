@@ -29,4 +29,4 @@ GitHub Issues через `gh` (`/ghub`), без MCP. Тип — одна мет�
 
 ### Domain docs
 
-Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Один `GLOSSARY.md` и `docs/adr/` в корне. Термины — только из словаря, без синонимов. Если решение противоречит ADR, скажи об этом прямо, а не обходи молча.
