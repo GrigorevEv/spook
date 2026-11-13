@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+      - name: Быстрые тесты
+        run: uv run --locked pytest -q
+
+  openspec:
+    name: openspec
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Проверка спек и изменений
+        run: npx --yes @fission-ai/openspec@1.16.1 validate --all --strict --no-interactive
