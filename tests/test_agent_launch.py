@@ -1,7 +1,7 @@
 """Запуск настоящего Claude Code и причины ошибок — на заглушке, которая проигрывает вывод из пробы.
 
 Образцы в `tests/data/claude/` — строки вывода `--output-format stream-json --verbose` из пробы
-(задача 02; сырые выводы — в архиве истории (см. `CLAUDE.md`), тег `tran-v1` в `.scratch/tran-v1/artifacts/02-headless-skill-probe/`):
+(задача 02; сырые выводы — в архиве истории (см. `AGENTS.md`), тег `tran-v1` в `.scratch/tran-v1/artifacts/02-headless-skill-probe/`):
 
 - `hook-blocked.jsonl` — № 03, блокировка хуком `UserPromptSubmit` (код возврата 0);
 - `success-with-denials.jsonl` — № 04 без сообщений модели: хуки, `init`, загрузка лимита,
