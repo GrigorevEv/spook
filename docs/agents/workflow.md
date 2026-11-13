@@ -14,7 +14,7 @@
 | 6 | `/opsx:verify <change>` | Код соответствует спеке |
 | 7 | `/code-review main openspec/changes/<change>` | Замечания исправлены |
 | 8 | `/opsx:archive <change>`, `/commit` | Дельты влиты в `openspec/specs/`; изменение в архиве |
-| 9 | `/pr`, затем `/ghub открой PR` | PR с `Fixes #N`; CI зелёный |
+| 9 | `/ghub открой PR` | PR по `.github/pull_request_template.md`, с `Fixes #N`; CI зелёный |
 | 10 | `/ghub влей PR` | Squash-merge; issue закрыт; ветка удалена |
 | 11 | `/retro` — по желанию, до `/clear` | Улучшения окружения |
 
@@ -38,7 +38,7 @@
 
 | Статус | Скиллы | Почему |
 |---|---|---|
-| В цепочке | `ghub`, `grill-with-docs`, `opsx:propose`, `opsx:apply`, `opsx:verify`, `opsx:archive`, `tdd`, `code-review`, `pr`, `commit`, `diagnosing-bugs`, `triage` | Не пересекаются: OpenSpec не интервьюирует, не задаёт TDD и не пишет PR |
+| В цепочке | `ghub`, `grill-with-docs`, `opsx:propose`, `opsx:apply`, `opsx:verify`, `opsx:archive`, `tdd`, `code-review`, `commit`, `diagnosing-bugs`, `triage` | Не пересекаются: OpenSpec не интервьюирует и не задаёт TDD |
 | Вызываются изнутри | `grilling`, `domain-modeling` | Их вызывают `grill-with-docs` и `triage`. У них снят `disable-model-invocation`, иначе обёртки падают; после `skills update` проверить снова |
 | По ситуации | `prototype`, `research`, `retro`, `handoff`, `wayfinder`, `improve-codebase-architecture`, `codebase-design`, `wait-what`, `opsx:update`, `opsx:sync` | Работают рядом с цепочкой; найденная работа становится issue |
 | Не используем | `opsx:explore` | Перекрывается с `grill-with-docs` |
@@ -46,6 +46,7 @@
 | Не используем | `implement`, `implement-spec` | Заменены `opsx:apply`; `implement-spec` требует `to-spec` и `to-tickets` |
 | Не используем | `grill-me` | То же интервью, но без `GLOSSARY.md` и ADR |
 | Не используем | `ask-matt` | Направляет в `to-spec` |
+| Не используем | `pr` | Текст PR — по `.github/pull_request_template.md`: один шаблон для агента и для сайта |
 | Не нужен | `setup-matt-pocock-skills` | Его результат уже записан вручную: этот файл и `issue-tracker.md` |
 
 ## Проверки и merge

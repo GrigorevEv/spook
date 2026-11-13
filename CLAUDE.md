@@ -23,6 +23,8 @@ Issue → `/grill-with-docs` → `/opsx:propose` → `/opsx:apply` → PR → me
 
 GitHub Issues через `gh` (`/ghub`), без MCP. Тип — одна метка из `bug`, `enhancement`, `chore`, `documentation`; тело — по шаблону из `.github/ISSUE_TEMPLATE/`, без спеки; `proposal.md` ссылается на issue строкой `Issue: #N`, PR закрывает его `Fixes #N`. См. `docs/agents/issue-tracker.md`.
 
+PR: заголовок — по-английски, в повелительном наклонении (станет коммитом в `main`); текст — по-русски, по `.github/pull_request_template.md`.
+
 ### OpenSpec
 
 Работа ведётся через OpenSpec (`openspec/config.yaml`). Текущие требования — `openspec/specs/<capability>/spec.md`; любое изменение поведения — изменение в `openspec/changes/<change>/` (`proposal.md`, `design.md`, `tasks.md`, дельты спек): `/opsx:propose` → `/opsx:apply` → `/opsx:archive`. Задачи, замеры и прототипы — пункты `tasks.md`, а не отдельные файлы в `.scratch/`. Базовые спеки для уже написанного кода — `/codely-openspec-spec-create-from-code <capability>`.
