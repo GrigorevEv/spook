@@ -39,7 +39,7 @@
 | Статус | Скиллы | Почему |
 |---|---|---|
 | В цепочке | `ghub`, `grill-with-docs`, `opsx:propose`, `opsx:apply`, `opsx:verify`, `opsx:archive`, `tdd`, `code-review`, `commit`, `diagnosing-bugs`, `triage` | Не пересекаются: OpenSpec не интервьюирует и не задаёт TDD |
-| Вызываются изнутри | `grilling`, `domain-modeling` | Их вызывают `grill-with-docs` и `triage`. У них снят `disable-model-invocation`, иначе обёртки падают; после `skills update` проверить снова |
+| Вызываются изнутри | `grilling`, `domain-modeling` | Их читают файлом `grill-with-docs` и `triage`. Все глобальные скиллы ручные; после `npx skills update` запустить `~/.agents/patch-skills.sh` |
 | По ситуации | `prototype`, `research`, `retro`, `handoff`, `wayfinder`, `improve-codebase-architecture`, `codebase-design`, `wait-what`, `opsx:update`, `opsx:sync` | Работают рядом с цепочкой; найденная работа становится issue |
 | Не используем | `opsx:explore` | Перекрывается с `grill-with-docs` |
 | Не используем | `to-spec`, `to-tickets` | Вторая спека и второй список задач рядом с OpenSpec и `tasks.md` |
