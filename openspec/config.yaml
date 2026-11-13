@@ -9,7 +9,7 @@ context: |
 
 rules:
   proposal:
-    - "The first line is `Issue: #<number>` — the GitHub issue this change comes from (docs/agents/issue-tracker.md). If the user gave no issue number, ask for it before writing."
+    - "The first line is `Issue: #<number>` — the GitHub issue this change comes from. If the user gave no issue number, ask for it before writing."
   tasks:
     - Spikes and prototypes are the first tasks; each says which tasks it blocks.
     - Every task is executable by an agent without the user's participation.

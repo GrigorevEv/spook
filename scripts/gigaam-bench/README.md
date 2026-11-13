@@ -42,7 +42,7 @@ uv run --no-project python summarize.py
 - `sherpa_check.py` — быстрая проверка, что sherpa-onnx даёт тот же текст.
 - `vad_tune.py` — подбор детектора; итог `results/vad_tune.json`.
 - `summarize.py` — таблицы для отчёта.
-- Копии JSON-итогов и журналов прогонов, на которых построен отчёт, — в архиве истории (см. `CLAUDE.md`), тег `tran-v1`: `git show tran-v1:.scratch/tran-v1/artifacts/01-gigaam-speed-measurement/results/<файл>`.
+- Копии JSON-итогов и журналов прогонов, на которых построен отчёт, — в архиве истории (см. `AGENTS.md`), тег `tran-v1`: `git show tran-v1:.scratch/tran-v1/artifacts/01-gigaam-speed-measurement/results/<файл>`.
 
 ## Образцы
 

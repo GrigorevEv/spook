@@ -1,6 +1,6 @@
 # Проба фонового запуска Скилла в Claude Code
 
-Задача 02 (архив истории, см. `CLAUDE.md`: `git show tran-v1:.scratch/tran-v1/issues/02-headless-skill-probe.md`), проверка того, что ADR-0003 оставил непроверенным. Дата: 2026-11-07. Claude Code 2.1.319 (`/home/ev/.local/bin/claude`), подписка пользователя, модель пробы `claude-haiku-5-5`, effort `low`. Сырые выводы всех запусков — в архиве истории (см. `CLAUDE.md`), тег `tran-v1` в `.scratch/tran-v1/artifacts/02-headless-skill-probe/` (архив истории, см. `CLAUDE.md`: `git show tran-v1:<путь>`).
+Задача 02 (архив истории, см. `AGENTS.md`: `git show tran-v1:.scratch/tran-v1/issues/02-headless-skill-probe.md`), проверка того, что ADR-0003 оставил непроверенным. Дата: 2026-11-07. Claude Code 2.1.319 (`/home/ev/.local/bin/claude`), подписка пользователя, модель пробы `claude-haiku-5-5`, effort `low`. Сырые выводы всех запусков — в архиве истории (см. `AGENTS.md`), тег `tran-v1` в `.scratch/tran-v1/artifacts/02-headless-skill-probe/` (архив истории, см. `AGENTS.md`: `git show tran-v1:<путь>`).
 
 ## Как проводилась
 

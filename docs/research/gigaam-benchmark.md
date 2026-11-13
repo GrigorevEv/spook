@@ -1,6 +1,6 @@
 # Замер GigaAM-v3 на целевом ноутбуке: два Источника на CPU
 
-Задача 01 первой версии (архив истории, см. `CLAUDE.md`: `git show tran-v1:.scratch/tran-v1/issues/01-gigaam-speed-measurement.md`). Вопрос: годится ли GigaAM-v3 `e2e_rnnt` для Живого текста на этом ноутбуке при двух одновременных Источниках, какую библиотеку запуска брать и с какими параметрами резать речь на Реплики. Проверка ADR-0002, где до этого стояла оценка по чужим замерам.
+Задача 01 первой версии (архив истории, см. `AGENTS.md`: `git show tran-v1:.scratch/tran-v1/issues/01-gigaam-speed-measurement.md`). Вопрос: годится ли GigaAM-v3 `e2e_rnnt` для Живого текста на этом ноутбуке при двух одновременных Источниках, какую библиотеку запуска брать и с какими параметрами резать речь на Реплики. Проверка ADR-0002, где до этого стояла оценка по чужим замерам.
 
 **Вывод: годится.** Две одновременные Реплики по 20 с распознаются обе за **1,0–1,3 с** (порог задачи — 8 с); за 5 минут непрерывной подачи двух потоков отставание не растёт (максимальная задержка 1,4 с в первой минуте, 1,25 с в последней). Выбор: библиотека **onnx-asr**, модель **`gigaam-v3-e2e-rnnt` int8** (энкодер 214 МБ, ~400 МБ памяти), **4 потока onnxruntime**; детектор Silero VAD с паузой ~0,7 с и принудительным разрезом ≤ 20 с по ближайшей короткой паузе.
 
@@ -12,7 +12,7 @@
 - Модель для onnx-asr — HF `istupakov/gigaam-v3-onnx` (MIT), ревизия `322c3b29492673eb7d0b434bfa9dfb8653e34d02`: `v3_e2e_rnnt_encoder.int8.onnx` 214,2 МБ, `decoder.int8` 1,1 МБ, `joint.int8` 0,7 МБ; fp32-энкодер 844 МБ — для сравнения. Для sherpa-onnx — архив `sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16` из релиза `asr-models` k2-fsa/sherpa-onnx (`punct` = e2e-вариант; `encoder.int8.onnx` 214 МБ, decoder и joiner fp32). Оба — экспорт одной и той же модели Сбера; на образцах дают одинаковый текст (расхождение — одна запятая).
 - Потоки onnxruntime: для onnx-asr `intra_op_num_threads = N`, `inter_op_num_threads = 1`; для sherpa-onnx `num_threads = N`. Перебраны N = 1, 2, 4, 6, 8, 10 (onnx-asr) и 1, 2, 4, 6 (sherpa-onnx). Основные числа — при **N = 4**.
 - Время — `time.perf_counter()` вокруг вызова распознавания уже загруженной модели (без чтения файла). «Медиана из 3» — три повтора подряд.
-- Скрипты — `scripts/gigaam-bench/` (там же `README.md` с командами); JSON с полными числами — в архиве истории (см. `CLAUDE.md`), тег `tran-v1` в `.scratch/tran-v1/artifacts/01-gigaam-speed-measurement/results/`.
+- Скрипты — `scripts/gigaam-bench/` (там же `README.md` с командами); JSON с полными числами — в архиве истории (см. `AGENTS.md`), тег `tran-v1` в `.scratch/tran-v1/artifacts/01-gigaam-speed-measurement/results/`.
 
 ## Образцы
 
@@ -165,4 +165,4 @@ uv run --no-project --with "onnx-asr[cpu,hub]" --with numpy python -u vad_tune.p
 uv run --no-project python summarize.py                                                        # таблицы из results/*.json
 ```
 
-Полные числа, тексты распознавания и журналы прогонов — в архиве истории (см. `CLAUDE.md`), тег `tran-v1`: `git show tran-v1:.scratch/tran-v1/artifacts/01-gigaam-speed-measurement/results/<файл>`.
+Полные числа, тексты распознавания и журналы прогонов — в архиве истории (см. `AGENTS.md`), тег `tran-v1`: `git show tran-v1:.scratch/tran-v1/artifacts/01-gigaam-speed-measurement/results/<файл>`.
