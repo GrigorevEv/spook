@@ -42,10 +42,9 @@ openspec init --tools <агент>   # claude, opencode, codex…
 | 5 | Новая сессия, `tdd`, `openspec-apply-change <change>` | Код, отмеченные задачи |
 | 6 | `openspec-verify-change <change>` | Код соответствует спеке |
 | 7 | `code-review main openspec/changes/<change>` | Замечания исправлены |
-| 8 | `openspec-archive-change <change>`, `commit` | Дельты влиты в `openspec/specs/`; изменение в архиве |
-| 9 | `ghub`: «открой PR» | PR по `.github/pull_request_template.md`, с `Fixes #N`; CI зелёный |
-| 10 | `ghub`: «влей PR» | Squash-merge; issue закрыт; ветка удалена |
-| 11 | `retro` — по желанию, в той же сессии | Улучшения окружения |
+| 8 | `openspec-archive-change <change>`, `ghpr` | Дельты влиты в `openspec/specs/`; изменение в архиве; PR по `.github/pull_request_template.md`, с `Fixes #N`; CI зелёный |
+| 9 | `ghub`: «влей PR» | Squash-merge; issue закрыт; ветка удалена |
+| 10 | `retro` — по желанию, в той же сессии | Улучшения окружения |
 
 Архивация идёт последним коммитом того же PR: спеки и код попадают в `main` вместе, второй PR не нужен.
 
@@ -54,9 +53,9 @@ openspec init --tools <агент>   # claude, opencode, codex…
 | Тип | Маршрут |
 |---|---|
 | `enhancement` | Основная цепочка |
-| `bug` | `diagnosing-bugs` → PR с `Fixes #N`, без OpenSpec. Если оказалось, что в спеке не хватает требования, — основная цепочка |
-| `chore` | PR с `Fixes #N`, без OpenSpec |
-| `documentation` | PR с `Fixes #N`, без OpenSpec |
+| `bug` | `diagnosing-bugs` → `ghpr`: PR с `Fixes #N`, без OpenSpec. Если оказалось, что в спеке не хватает требования, — основная цепочка |
+| `chore` | `ghpr`: PR с `Fixes #N`, без OpenSpec |
+| `documentation` | `ghpr`: PR с `Fixes #N`, без OpenSpec |
 | Чужой issue | Сначала `triage`, потом маршрут его типа |
 
 Большая неясная работа, которая не помещается в одну сессию, — `wayfinder`; каждый прояснившийся кусок идёт в `openspec-propose` вместо `to-spec`. Параллельная работа — одно изменение OpenSpec на ветку в своём worktree.
@@ -65,7 +64,7 @@ openspec init --tools <агент>   # claude, opencode, codex…
 
 | Статус | Скиллы | Почему |
 |---|---|---|
-| В цепочке | `ghub`, `grill-with-docs`, `openspec-propose`, `openspec-apply-change`, `openspec-verify-change`, `openspec-archive-change`, `tdd`, `code-review`, `commit`, `diagnosing-bugs`, `triage` | Не пересекаются: OpenSpec не интервьюирует и не задаёт TDD |
+| В цепочке | `ghub`, `ghpr`, `grill-with-docs`, `openspec-propose`, `openspec-apply-change`, `openspec-verify-change`, `openspec-archive-change`, `tdd`, `code-review`, `commit`, `diagnosing-bugs`, `triage` | Не пересекаются: OpenSpec не интервьюирует и не задаёт TDD |
 | Вызываются изнутри | `grilling`, `domain-modeling` | Их читают файлом `grill-with-docs` и `triage`. Все глобальные скиллы ручные; после `npx skills update` запустить `~/.agents/patch-skills.sh` |
 | По ситуации | `prototype`, `research`, `retro`, `handoff`, `wayfinder`, `improve-codebase-architecture`, `codebase-design`, `wait-what`, `openspec-update-change`, `openspec-sync-specs` | Работают рядом с цепочкой; найденная работа становится issue |
 | По ситуации | `openspec-explore` | Пока вместо него — `grill-with-docs` |
@@ -80,7 +79,8 @@ openspec init --tools <агент>   # claude, opencode, codex…
 
 - CI (`.github/workflows/ci.yml`) на каждый PR: `uv run pytest -q` и `openspec validate --all --strict`.
 - В `main` — только через PR с зелёным CI; merge только squash, ветка удаляется после merge.
-- Squash-коммит в `main` — заголовок PR и `(#N)`, без тела. Поэтому заголовок PR пишется как коммит: по-английски, в повелительном наклонении. Текст PR — по-русски.
+- Squash-коммит в `main` пишется при merge по формату скилла `commit` для личных репозиториев, по-английски, про весь PR (`gh pr diff <N>`): заголовок PR и `(#N)`, список изменений в повелительном наклонении, трейлер `Co-Authored-By`. Передаётся явно: `gh pr merge <N> --squash --delete-branch --subject "<заголовок> (#N)" --body-file <файл>`. Поэтому заголовок PR пишется как коммит: по-английски, в повелительном наклонении. Текст PR — по-русски.
+- Коммит ветки — одна строка и трейлер `Co-Authored-By`: в `main` попадает только сообщение squash-коммита, тела коммитов ветки остаются во вкладке Commits PR.
 - Апрув не обязателен: репозиторий ведёт один человек, а GitHub не даёт одобрить свой PR.
 - Merge — только по явной команде пользователя.
 
