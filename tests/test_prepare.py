@@ -1,10 +1,3 @@
-"""Команда подготовки `spook prepare`: скачивает модели распознавания и детектора речи (Silero) один раз;
-её вызывает установка. Каталог детектора — `$XDG_DATA_HOME/spook/models/silero-vad`.
-
-Быстрые тесты идут без сети: `HF_HUB_OFFLINE=1` запрещает скачивание, так что попытка
-скачать там, где модель уже есть, провалила бы тест. Настоящее скачивание — вне автотестов.
-"""
-
 from __future__ import annotations
 
 import os
@@ -21,7 +14,7 @@ MODEL_FILES = (
 )
 
 
-def prepare(tmp_path: Path, model_dir: Path) -> subprocess.CompletedProcess[str]:
+def prepare_offline(tmp_path: Path, model_dir: Path) -> subprocess.CompletedProcess[str]:
     settings = tmp_path / "settings.toml"
     settings.write_text(f'[recognition]\nmodel_dir = "{model_dir}"\n', encoding="utf-8")
     return subprocess.run(
@@ -56,7 +49,7 @@ def test_prepare_does_nothing_when_both_models_are_already_present(tmp_path):
     put_recognition_model(model_dir)
     vad_dir = put_speech_detector_model(tmp_path)
 
-    result = prepare(tmp_path, model_dir)
+    result = prepare_offline(tmp_path, model_dir)
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.count("уже есть") == 2, result.stdout
@@ -71,7 +64,7 @@ def test_prepare_without_network_explains_missing_speech_detector_and_leaves_no_
     put_recognition_model(model_dir)
     vad_models = tmp_path / "data" / "spook" / "models"
 
-    result = prepare(tmp_path, model_dir)
+    result = prepare_offline(tmp_path, model_dir)
 
     assert result.returncode != 0
     assert "Модель детектора речи не скачана" in result.stderr
@@ -81,7 +74,7 @@ def test_prepare_without_network_explains_missing_speech_detector_and_leaves_no_
 def test_prepare_without_network_explains_failure_and_leaves_no_partial_model(tmp_path):
     models = tmp_path / "data" / "models"
 
-    result = prepare(tmp_path, models / "gigaam-v3-e2e-rnnt")
+    result = prepare_offline(tmp_path, models / "gigaam-v3-e2e-rnnt")
 
     assert result.returncode != 0
     assert "Модель распознавания не скачана" in result.stderr

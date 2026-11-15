@@ -1,6 +1,3 @@
-"""Что приложение даёт Агенту Встречи сверх Скилла: названия заметок рабочего Хранилища и Вики — без
-содержимого — и путь к Словарю терминов; заготовка Словаря, если файла нет."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,7 +8,6 @@ SECRET = "пароль: hunter2"
 
 
 def finished_meeting(spook) -> Path:
-    """Встреча с Репликой, завершённая по «Стоп»; заглушка Агента написала Выжимку."""
     spook.agent.play("summary")
     spook.recognizer.say("Обсудим релиз.")
     assert spook.start_meeting().status_code == 200
@@ -50,7 +46,7 @@ def test_meeting_agent_gets_names_of_work_vault_and_wiki_notes_without_their_con
     assert str(spook.settings.terms_dictionary) in context
     assert SECRET not in context
     assert "Служебное" not in context and "схема" not in context
-    assert note.stem not in context  # сама Заметка — не связанная
+    assert note.stem not in context
 
 
 def test_lecture_agent_gets_no_list_of_notes(spook):

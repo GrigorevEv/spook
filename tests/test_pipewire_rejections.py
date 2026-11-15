@@ -1,8 +1,3 @@
-"""«Старт» на настоящем входе отклоняется с понятной причиной, когда PipeWire не даёт устройства.
-
-PipeWire здесь не нужен: внешняя программа `pw-dump` подменена скриптом-заглушкой на PATH.
-"""
-
 from __future__ import annotations
 
 import json
@@ -12,7 +7,6 @@ import pytest
 
 from spook.pipewire import PipeWireAudioInput
 
-# Дамп PipeWire без устройства вывода: есть только микрофон.
 DUMP_WITHOUT_OUTPUT_DEVICE = json.dumps(
     [
         {"id": 0, "type": "PipeWire:Interface:Core", "info": {"props": {"core.name": "pipewire-0"}}},
@@ -45,8 +39,7 @@ DUMP_WITHOUT_OUTPUT_DEVICE = json.dumps(
 
 
 @pytest.fixture
-def program_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Единственный каталог на PATH: сюда кладутся заглушки внешних программ."""
+def only_dir_on_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     directory = tmp_path / "bin"
     directory.mkdir()
     monkeypatch.setenv("PATH", str(directory))
@@ -54,18 +47,18 @@ def program_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
-def audio_input(program_dir: Path) -> PipeWireAudioInput:
+def audio_input(only_dir_on_path: Path) -> PipeWireAudioInput:
     return PipeWireAudioInput()
 
 
-def stub_pw_dump(program_dir: Path, output: str) -> None:
-    script = program_dir / "pw-dump"
+def stub_pw_dump(only_dir_on_path: Path, output: str) -> None:
+    script = only_dir_on_path / "pw-dump"
     script.write_text(f"#!/bin/sh\nprintf '%s\\n' '{output}'\n", encoding="utf-8")
     script.chmod(0o755)
 
 
-def test_start_is_rejected_when_there_is_no_default_output_device(spook, program_dir: Path):
-    stub_pw_dump(program_dir, DUMP_WITHOUT_OUTPUT_DEVICE)
+def test_start_is_rejected_when_there_is_no_default_output_device(spook, only_dir_on_path: Path):
+    stub_pw_dump(only_dir_on_path, DUMP_WITHOUT_OUTPUT_DEVICE)
 
     response = spook.start_lecture()
 
@@ -81,8 +74,8 @@ def test_start_is_rejected_when_pipewire_is_unavailable(spook):
     assert "PipeWire недоступен" in response.text
 
 
-def test_start_is_rejected_when_pinned_device_is_absent(spook, program_dir: Path):
-    stub_pw_dump(program_dir, DUMP_WITHOUT_OUTPUT_DEVICE)
+def test_start_is_rejected_when_pinned_device_is_absent(spook, only_dir_on_path: Path):
+    stub_pw_dump(only_dir_on_path, DUMP_WITHOUT_OUTPUT_DEVICE)
     with spook.settings_path.open("a", encoding="utf-8") as file:
         file.write('\n[sources]\nmic = "alsa_input.usb-mic"\nsystem = "alsa_output.usb-dac"\n')
 

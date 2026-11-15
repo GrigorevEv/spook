@@ -1,7 +1,3 @@
-"""Тема от Агента: команда `spook topic <путь к Заметке> <Тема>` — та, которой Скилл сообщает придуманную
-Тему. Тесты вызывают её так, как Скилл: отдельным процессом из папки вида, в чистом окружении
-(только HOME, PATH и расположение настроек), и через заглушку Агента."""
-
 from __future__ import annotations
 
 import os
@@ -19,8 +15,6 @@ def note_names(spook) -> list[str]:
 
 
 def finished_lecture(spook, topic: str = "") -> Path:
-    """Лекция с Репликой, завершённая по «Стоп»; заглушка Агента (сценарий по умолчанию) уже отработала
-    без Выжимки. Возвращает путь к Заметке."""
     spook.recognizer.say("Лидер рассылает записи журнала.")
     assert spook.start_lecture(topic=topic).status_code == 200
     with spook.events() as events:
@@ -32,8 +26,6 @@ def finished_lecture(spook, topic: str = "") -> Path:
 
 
 def topic_command(spook, note: Path, *topic: str, settings: Path | None = None) -> subprocess.CompletedProcess:
-    """`spook topic <путь> <Тема>`, как её вызывает Скилл: из папки, где лежит Заметка, без переменных
-    окружения сессии — только HOME, PATH и расположение настроек (`XDG_CONFIG_HOME` временного каталога)."""
     environment = {
         "HOME": os.environ["HOME"],
         "PATH": os.environ.get("PATH", ""),
@@ -70,7 +62,7 @@ def test_topic_command_renames_finished_note_without_topic_prints_new_path_and_p
 
 
 def test_agent_that_reports_topic_and_writes_summary_at_new_path_gives_done_under_new_name(spook):
-    spook.agent.play("topic")  # заглушка сообщает Тему «Репликация в Raft» командой, затем пишет Выжимку
+    spook.agent.play("topic")
     spook.recognizer.say("Лидер рассылает записи журнала.")
     spook.start_lecture()
 
@@ -84,7 +76,6 @@ def test_agent_that_reports_topic_and_writes_summary_at_new_path_gives_done_unde
     assert new_name in agent.data and "ошибка" not in agent.data
     assert note_names(spook) == [f"{new_name}.md"]
     assert "## О чём" in (spook.lectures_dir / f"{new_name}.md").read_text(encoding="utf-8")
-    # Агент получил прежний путь, а Выжимку дописал по новому; журнал и уведомление — под новым именем.
     assert [call["argv"][1] for call in spook.agent.calls()] == [f"/spook-lecture {spook.lectures_dir / NOTE_WITHOUT_TOPIC}"]
     assert [path.name for path in (spook.state_dir / "agent" / "lecture").iterdir()] == [f"{new_name}.log"]
     journal = spook.http.get(f"{spook.base_url}/agent/log", params={"note": new_name})
@@ -212,7 +203,6 @@ def test_topic_that_repeats_name_of_another_note_gets_number_two(spook):
 
 
 def test_topic_command_is_rejected_for_link_in_kind_folder_that_leads_outside(spook, tmp_path: Path):
-    # Та же проверка пути, что у команд экрана «Заметки»: файл прямо в папке вида, без ссылок наружу.
     outside = tmp_path / "outside.md"
     outside.write_text("## Транскрипт\n", encoding="utf-8")
     spook.lectures_dir.mkdir(parents=True)

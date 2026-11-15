@@ -1,12 +1,3 @@
-"""Настройки — TOML в `~/.config/spook/settings.toml`; умолчания — из спецификации.
-
-Файл может отсутствовать или содержать только часть ключей: остальное берётся из умолчаний.
-Настройки читаются заново перед каждой Сессией, поэтому правки действуют без перезапуска службы.
-
-Экран «Настройки» правит часть ключей (`SCREEN_FIELDS`) через `screen_values` и `save_screen_settings`;
-остальные ключи файла при сохранении остаются как были, комментарии теряются.
-"""
-
 from __future__ import annotations
 
 import json
@@ -40,20 +31,15 @@ EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 @dataclass(frozen=True)
 class KindSettings:
-    """Настройки одного вида Сессии: куда писать Заметки и чем работает Агент."""
-
     folder: Path
     skill: str
     model: str = "opus"
     effort: str = "high"
     agent_cwd: Path | None = None
-    """Рабочий каталог запуска Агента; `None` — папка вида. Для Лекции — корень Вики (`Settings.for_kind`)."""
 
 
 @dataclass(frozen=True)
 class SourceSettings:
-    """Закреплённые устройства Источников (`node.name` PipeWire); пустая строка — устройство по умолчанию."""
-
     system: str = ""
     mic: str = ""
 
@@ -63,18 +49,14 @@ class SourceSettings:
 
 @dataclass(frozen=True)
 class RecognitionSettings:
-    """Нарезка на Реплики и модель распознавания; умолчания — выбор замера задачи 01
-    (`docs/research/gigaam-benchmark.md`). Параметры детектора речи — как у `with_vad` в onnx-asr —
-    действуют со следующей Сессии, параметры модели — со следующего запуска службы."""
-
-    max_utterance_seconds: float = 20.0  # длиннее речь без паузы режется принудительно
-    speech_threshold: float = 0.5  # вероятность речи, с которой начинается речь; кончается ниже на 0,15
-    min_silence_duration_ms: int = 500  # пауза, закрывающая Реплику, — это плюс два запаса по краям: 0,7 с
-    min_speech_duration_ms: int = 250  # речь короче — щелчок или вздох, а не Реплика
-    speech_pad_ms: int = 100  # запас звука по краям Реплики
-    forced_cut_min_pause_ms: int = 100  # пауза, по которой режется длинная речь; без неё — разрез жёсткий
+    max_utterance_seconds: float = 20.0
+    speech_threshold: float = 0.5
+    min_silence_duration_ms: int = 500
+    min_speech_duration_ms: int = 250
+    speech_pad_ms: int = 100
+    forced_cut_min_pause_ms: int = 100
     model_dir: Path = field(default_factory=lambda: data_dir() / "models" / "gigaam-v3-e2e-rnnt")
-    model_revision: str = "322c3b29492673eb7d0b434bfa9dfb8653e34d02"  # HF istupakov/gigaam-v3-onnx
+    model_revision: str = "322c3b29492673eb7d0b434bfa9dfb8653e34d02"
     quantization: str = "int8"
     intra_op_threads: int = 4
     inter_op_threads: int = 1
@@ -82,30 +64,12 @@ class RecognitionSettings:
 
 @dataclass(frozen=True)
 class AgentSettings:
-    """Запуск Агента.
-
-    `timeout_minutes` — сколько ждать запуска, прежде чем завершить его с «превышено время»; больше
-    четырёх минут, потому что без сети Claude Code сам сдаётся только через ~3 минуты повторов.
-    `wrapper` — команда, которой обернуть запуск (по умолчанию нет: служба systemd и так даёт чистое
-    окружение). Например, `systemd-run --user --wait --pipe --collect --quiet --same-dir
-    -p RuntimeMaxSec={timeout}` — чистое окружение пользовательского менеджера systemd для службы,
-    поднятой вручную; `{timeout}` заменяется таймаутом в секундах (прерывание `systemd-run` не
-    останавливает запущенный им юнит, поэтому юниту нужен свой предел).
-    """
-
     timeout_minutes: float = 15
     wrapper: str = ""
 
 
 @dataclass(frozen=True)
 class ProgramSettings:
-    """Внешние программы; в тестах подменяются скриптами-заглушками.
-
-    `claude` — сама программа Claude Code по полному пути, а не обёртка из оболочки пользователя;
-    `wiki` — командная строка инструмента Вики (к ней добавляется `file <имя заметки>`). `~` в них
-    раскрывается.
-    """
-
     claude: str = str(Path("~/.local/bin/claude").expanduser())
     notify: str = "notify-send"
     open: str = "xdg-open"
@@ -119,7 +83,7 @@ def _home(path: str) -> Path:
 @dataclass(frozen=True)
 class Settings:
     port: int = 8765
-    auto_stop_minutes: float = 5  # можно дробное: 1.5 — полторы минуты
+    auto_stop_minutes: float = 5
     terms_dictionary: Path = field(default_factory=lambda: _home("~/Documents/notes/работа/Словарь терминов.md"))
     wiki: Path = field(default_factory=lambda: _home("~/learn/wiki"))
     meeting: KindSettings = field(
@@ -134,13 +98,11 @@ class Settings:
     agent: AgentSettings = field(default_factory=AgentSettings)
 
     def for_kind(self, kind: SessionKind) -> KindSettings:
-        """Настройки вида; у Лекции рабочий каталог Агента — корень Вики, чтобы действовали её правила."""
         if kind is SessionKind.LECTURE:
             return replace(self.lecture, agent_cwd=self.lecture.agent_cwd or self.wiki)
         return self.meeting
 
     def kind_folders(self) -> list[tuple[SessionKind, Path]]:
-        """Папки Заметок по видам — где служба признаёт Заметки Сессий (`note.find_session_note`)."""
         return [(kind, self.for_kind(kind).folder) for kind in SessionKind]
 
 
@@ -164,7 +126,6 @@ def default_settings_path() -> Path:
 
 
 def load_settings(path: Path | None = None) -> Settings:
-    """Читает настройки из файла; отсутствующий файл или ключ означает умолчание."""
     path = path or default_settings_path()
     raw: dict[str, Any] = {}
     if path.exists():
@@ -210,30 +171,25 @@ def _merge(defaults: Any, raw: dict[str, Any]) -> Any:
     return replace(defaults, **{key: value for key, value in raw.items() if key in known})
 
 
-# --- экран «Настройки» ------------------------------------------------------------
-
 SCREEN_FIELDS = (
     *(f"{kind.value}.{key}" for kind in SessionKind for key in ("folder", "skill", "model", "effort")),
     *(f"sources.{source.value}" for source in Source),
     "auto_stop_minutes",
     "terms_dictionary",
 )
-"""Поля экрана «Настройки» — ключи файла настроек, через точку — ключ таблицы."""
 
-# Скилл и модель уходят в командную строку Агента: одно слово, без пробелов и без ведущего «-».
-_AGENT_WORD = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:\[\]-]{0,79}$")
+_AGENT_ARGV_WORD = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:\[\]-]{0,79}$")
+
+WHOLE_FILE_KEY = ""
 
 
 class SettingsRejected(Exception):
-    """Значения экрана «Настройки» недопустимы; `errors` — причина по каждому полю (пустой ключ — про весь файл)."""
-
     def __init__(self, errors: dict[str, str]) -> None:
         super().__init__("; ".join(errors.values()))
         self.errors = errors
 
 
 def screen_values(settings: Settings) -> dict[str, str]:
-    """Текущие значения полей экрана «Настройки» строками, как их покажет форма."""
     values: dict[str, str] = {}
     for kind in SessionKind:
         kind_settings = settings.for_kind(kind)
@@ -249,18 +205,13 @@ def screen_values(settings: Settings) -> dict[str, str]:
 
 
 def save_screen_settings(path: Path, form: Mapping[str, str]) -> None:
-    """Проверяет поля экрана «Настройки» и пишет их в файл настроек.
-
-    Ключи файла, которых на экране нет (порт, `[recognition]`, `[programs]` и любые другие), остаются
-    как были; комментарии теряются. При любом недопустимом значении — `SettingsRejected`, файл не меняется.
-    """
     changes, errors = _check_screen(form)
     raw: dict[str, Any] = {}
     if path.exists():
         try:
             raw = tomllib.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
-            errors[""] = f"Файл настроек {path} не читается: {error}"
+            errors[WHOLE_FILE_KEY] = f"Файл настроек {path} не читается: {error}"
     if errors:
         raise SettingsRejected(errors)
     for key, value in changes.items():
@@ -272,8 +223,8 @@ def save_screen_settings(path: Path, form: Mapping[str, str]) -> None:
             target = raw[table]
         target[name] = value
     text = _toml(raw)
-    if tomllib.loads(text) != raw:  # запись не должна исказить ни одного ключа
-        raise SettingsRejected({"": "Файл настроек не удалось записать без искажений"})
+    if tomllib.loads(text) != raw:
+        raise SettingsRejected({WHOLE_FILE_KEY: "Файл настроек не удалось записать без искажений"})
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp")
     temporary.write_text(text, encoding="utf-8")
@@ -281,7 +232,6 @@ def save_screen_settings(path: Path, form: Mapping[str, str]) -> None:
 
 
 def _check_screen(form: Mapping[str, str]) -> tuple[dict[str, Any], dict[str, str]]:
-    """Значения для файла и причины отказа по полям."""
     changes: dict[str, Any] = {}
     errors: dict[str, str] = {}
     value = {key: str(form.get(key, "")).strip() for key in SCREEN_FIELDS}
@@ -327,14 +277,13 @@ def _path_problem(text: str, what: str) -> str:
 def _word_problem(text: str, what: str) -> str:
     if not text:
         return f"Укажите {what}"
-    if not _AGENT_WORD.match(text):
+    if not _AGENT_ARGV_WORD.match(text):
         return f"{what.capitalize()} — одно слово из латиницы, цифр и «.-_:» без пробелов, а не «{text}»"
     return ""
 
 
-# --- запись TOML: всё, что даёт tomllib; массивы таблиц пишутся массивами встроенных таблиц ---
-
 _BARE_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+_DEL_UNESCAPED_BY_JSON = "\x7f"
 
 
 def _toml(raw: dict[str, Any], prefix: tuple[str, ...] = ()) -> str:
@@ -370,9 +319,8 @@ def _toml_value(value: Any) -> str:
         return "[" + ", ".join(_toml_value(item) for item in value) + "]"
     if isinstance(value, dict):
         return "{ " + ", ".join(f"{_toml_key(key)} = {_toml_value(item)}" for key, item in value.items()) + " }"
-    return value.isoformat()  # дата и время TOML
+    return value.isoformat()
 
 
 def _toml_string(text: str) -> str:
-    # Строка JSON — допустимая базовая строка TOML; DEL TOML требует экранировать, JSON — нет.
-    return json.dumps(text, ensure_ascii=False).replace("\x7f", "\\u007f")
+    return json.dumps(text, ensure_ascii=False).replace(_DEL_UNESCAPED_BY_JSON, "\\u007f")

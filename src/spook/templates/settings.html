@@ -35,7 +35,6 @@
         {% set effort_name = kind.value ~ ".effort" %}
         <label for="{{ effort_name }}">Effort Агента</label>
         <select id="{{ effort_name }}" name="{{ effort_name }}">
-          {# Неизвестное значение из файла тоже видно: сохранить его экран не даст, но и не подменит молча. #}
           {% for effort in (efforts if values[effort_name] in efforts else efforts + (values[effort_name],)) %}<option value="{{ effort }}"{% if effort == values[effort_name] %} selected{% endif %}>{{ effort }}</option>{% endfor %}
         </select>
         {{ error(effort_name) }}

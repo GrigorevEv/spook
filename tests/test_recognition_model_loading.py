@@ -1,17 +1,10 @@
-"""Служба с настоящим GigaAM: в простое модель не загружена, после первого «Старт» — загружена,
-и Реплики Лекции попадают в Заметку распознанным текстом.
-
-Медленный тест на главном шве: вход звука — образец речи (не захваченный звук, ADR-0001),
-распознаватель — настоящий. Без модели или образца тест пропускается.
-"""
-
 from __future__ import annotations
 
 import logging
 
 import pytest
 
-from speech_samples import EXPECTED, model_settings, read_sample, similarity
+from speech_samples import RECOGNIZED_IN_BENCHMARK, model_settings, read_sample, similarity
 from spook.recognizer import GigaamRecognizer, Recognizer
 
 pytestmark = pytest.mark.slow
@@ -39,6 +32,6 @@ def test_model_is_loaded_only_after_first_start_and_lecture_gets_recognized_text
 
     assert spook.recognizer.loaded
     transcript = note.read_text(encoding="utf-8").split("## Транскрипт", 1)[1]
-    paragraph = transcript.strip().split(" ", 1)[1]  # без отметки времени «**00:00**»
-    assert similarity(EXPECTED[SAMPLE], paragraph) >= 0.9, transcript
+    paragraph_without_time = transcript.strip().split(" ", 1)[1]
+    assert similarity(RECOGNIZED_IN_BENCHMARK[SAMPLE], paragraph_without_time) >= 0.9, transcript
     assert "Модель распознавания загружается" in caplog.text

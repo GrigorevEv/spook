@@ -1,9 +1,3 @@
-"""Экран «Настройки» — главный шов: HTTP так, как ходит браузер, файл настроек во временном каталоге,
-список устройств — у подменённого входа звука.
-
-Форма читается так, как её видит браузер: поля, их значения и выбранные пункты списков.
-"""
-
 from __future__ import annotations
 
 import tomllib
@@ -20,8 +14,6 @@ MEETING_NOTE_NAME = "2026-11-06 14-02 Встреча"
 
 
 class Form(HTMLParser):
-    """Поля формы экрана: `values` — что браузер отправит, `options` — пункты списков (значение, подпись)."""
-
     def __init__(self, html: str) -> None:
         super().__init__()
         self.values: dict[str, str] = {}
@@ -85,7 +77,6 @@ def test_settings_screen_shows_current_values_from_settings_file(spook):
 
 
 def save(spook, **changes: str):
-    """«Сохранить» на экране: форма уходит со всеми полями, как их показал экран, и с изменёнными."""
     form = settings_form(spook).values
     for key, value in changes.items():
         form[key.replace("__", ".")] = value
@@ -101,7 +92,7 @@ def test_every_screen_links_to_settings(spook):
 def test_settings_screen_reminds_that_skill_permissions_live_in_skill_headers(spook):
     html = spook.http.get(f"{spook.base_url}/settings").text
 
-    assert html.count("в шапке Скилла") == 2  # у папки Встреч и у папки Лекций
+    assert html.count("в шапке Скилла") == 2
 
 
 def test_saving_writes_settings_file_and_keeps_keys_that_are_not_on_screen(spook, tmp_path):
@@ -185,8 +176,6 @@ def test_pinned_device_that_is_absent_now_stays_selected(spook):
 
 
 def meeting_until_auto_stop(spook, minutes: float) -> None:
-    """Встреча с одной Репликой; тишина длиной `minutes` после неё завершает Сессию автостопом,
-    а на секунду раньше — ещё нет."""
     spook.recognizer.say("Реплика.")
     with spook.events() as events:
         assert spook.start_meeting().status_code == 200
@@ -200,7 +189,6 @@ def meeting_until_auto_stop(spook, minutes: float) -> None:
 
 
 def agent_launches(spook) -> list[tuple[list[str], str]]:
-    """Запуски Агента: Скилл с Заметкой, модель и effort (первые шесть аргументов) и рабочий каталог."""
     return [(call["argv"][:6], call["cwd"]) for call in spook.agent.calls()]
 
 
@@ -231,11 +219,10 @@ def test_saving_during_session_acts_from_next_session_and_agent_works_in_folder_
         assert response.status_code == 200
         spook.audio.feed(speech(20))
         events.wait_for("paragraph", containing="Реплика.")
-        spook.clock.advance(5 * 60)  # автостоп — прежний, на момент «Старт»
+        spook.clock.advance(5 * 60)
         events.wait_for("state", containing="нет Сессии")
         events.wait_for("agent", containing="готово")
 
-    # Заметка — в прежней папке, Агент работает в ней; модель — уже новая: это следующий запуск Агента.
     note = spook.meetings_dir / f"{MEETING_NOTE_NAME}.md"
     assert note.is_file()
     assert agent_launches(spook) == [
@@ -278,11 +265,11 @@ def test_agent_names_topic_of_note_left_in_folder_changed_during_session(spook, 
 )
 def test_invalid_value_is_rejected_with_reason_and_settings_file_stays_unchanged(spook, field, value, reason):
     before = spook.settings_path.read_bytes()
-    changes = {"auto_stop_minutes": "3", field.replace(".", "__"): value}  # среди полей есть и допустимая правка
+    changes = {"auto_stop_minutes": "3", field.replace(".", "__"): value}
 
     response = save(spook, **changes)
 
     assert response.status_code == 422
     assert reason in response.text
     assert spook.settings_path.read_bytes() == before
-    assert Form(response.text).values[field] == value  # введённое не пропадает: его можно поправить
+    assert Form(response.text).values[field] == value

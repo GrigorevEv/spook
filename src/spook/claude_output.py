@@ -1,24 +1,3 @@
-"""Разбор вывода запуска Claude Code: чем закончился запуск и почему, словами для пользователя.
-
-Вывод — поток `--output-format stream-json --verbose`: по JSON-событию в строке. Итог берётся из
-последнего события `result`; код возврата различает мало (0 и при успехе, и при блокировке хуком),
-а `subtype` остаётся `"success"` даже при `is_error: true`. Признаки исходов — по пробе
-(`docs/research/headless-skill-probe.md`, «Как приложению различать исходы»):
-
-- блокировка хуком `UserPromptSubmit` (у пользователя — выключенный VPN): событие `system/informational`
-  с `prompt_submit_outcome.kind: "blocked_by_hook"` или `result`, начинающийся с
-  «UserPromptSubmit operation blocked by hook:»;
-- исчерпан лимит подписки (в пробе не вызывался, по документации): `rate_limit_event` со
-  `status: "rejected"`, `system/api_retry` с `error: "rate_limit"`, итог с `api_error_status: 429`
-  или `terminal_reason: "blocking_limit"`;
-- нет сети: итог с `is_error: true` и `api_error: "connection_failed"`;
-- отказ в правах: непустой `permission_denials` в итоге (или события `system/permission_denied`).
-  Запуск от этого не падает — это предупреждение; причиной ошибки отказ становится, только если
-  Выжимки в итоге нет (это решает очередь по Заметке).
-
-Строки, которые не разбираются как JSON, пропускаются: журнал хранит вывод как есть, разбор его не трогает.
-"""
-
 from __future__ import annotations
 
 import json
@@ -33,9 +12,6 @@ HOOK_BLOCKED_PREFIX = "UserPromptSubmit operation blocked by hook:"
 
 @dataclass(frozen=True)
 class Verdict:
-    """Что говорит вывод: `failure` — причина ошибки (пусто, если запуск по выводу удался);
-    `denials` — «Отказ в правах: …» или пусто."""
-
     failure: str = ""
     denials: str = ""
 
@@ -100,7 +76,7 @@ def _is_error_subtype(result: dict[str, Any]) -> bool:
 def _denials(events: list[dict[str, Any]], result: dict[str, Any] | None) -> str:
     if result is not None and isinstance(result.get("permission_denials"), list):
         items = [_denial(item) for item in result["permission_denials"] if isinstance(item, dict)]
-    else:  # итога нет (запуск прерван) — отказы видны только событиями по ходу
+    else:
         items = [
             _denial(event) for event in events if event.get("type") == "system" and event.get("subtype") == "permission_denied"
         ]
@@ -118,7 +94,6 @@ def _denial(item: dict[str, Any]) -> str:
 
 
 def _message(result: dict[str, Any] | None, stdout: str, stderr: str, returncode: int) -> str:
-    """Сообщение самого запуска: текст итога, ошибки итога, последняя строка stderr или не-JSON вывода."""
     if result is not None:
         if str(result.get("result", "")).strip():
             return _first_line(str(result["result"]))

@@ -1,10 +1,3 @@
-"""Отставание распознавания — главный шов: медленный сценарный распознаватель, поток событий, Заметка.
-
-Медленный распознаватель — сценарный, задержанный «воротами»: отрезки ждут, пока тест их не отпустит,
-так что реального времени тест не ждёт. Реплики здесь идут без молчания между ними и потому
-склеиваются в один абзац: продолжение приходит событием `paragraph-update`.
-"""
-
 from __future__ import annotations
 
 from conftest import NOTE_AFTER_START, note_text, speech
@@ -12,16 +5,16 @@ from conftest import NOTE_AFTER_START, note_text, speech
 
 def test_slow_recognizer_loses_nothing_and_stop_waits_for_all_utterances_in_order(spook):
     spook.recognizer.say("Первая.", "Вторая.", "Третья.", "Четвёртая.", "Хвост.")
-    spook.recognizer.hold()  # распознаватель не отвечает, пока тест его не отпустит
+    spook.recognizer.hold()
     spook.start_lecture()
 
     with spook.events() as events:
-        spook.audio.feed(speech(85))  # четыре отрезка по 20 с и остаток 5 с ждут в очереди
+        spook.audio.feed(speech(85))
         spook.clock.advance(85)
         response = spook.stop()
         assert response.status_code == 200, response.text
         events.wait_for("state", containing="завершается")
-        assert note_text(spook) == NOTE_AFTER_START  # ничего не распознано и ничего не выброшено
+        assert note_text(spook) == NOTE_AFTER_START
 
         spook.recognizer.release_all()
 
@@ -47,16 +40,16 @@ def test_backlog_is_shown_only_while_a_segment_waits_behind_the_one_being_recogn
     spook.start_lecture()
 
     with spook.events() as events:
-        events.wait_for("backlog")  # пустое отставание из полного состояния при подключении
-        spook.audio.feed(speech(20))  # один отрезок: распознаётся, за ним никто не ждёт
+        events.wait_for("backlog")
+        spook.audio.feed(speech(20))
         alone = events.wait_for("backlog")
         page_alone = spook.page().text
 
-        spook.audio.feed(speech(20))  # второй отрезок ждёт за первым
+        spook.audio.feed(speech(20))
 
         waiting = events.wait_for("backlog")
         page_waiting = spook.page().text
-        spook.recognizer.release()  # первый распознан; второй распознаётся, за ним никто не ждёт
+        spook.recognizer.release()
         events.wait_for("paragraph", containing="Первая.")
         alone_again = events.wait_for("backlog")
         spook.recognizer.release_all()
@@ -73,7 +66,7 @@ def test_event_stream_reports_backlog_in_seconds_of_sound_and_page_clears_it_whe
     spook.start_lecture()
 
     with spook.events() as events:
-        spook.audio.feed(speech(60))  # три отрезка по 20 с: один распознаётся, два ждут в очереди
+        spook.audio.feed(speech(60))
         waiting = events.wait_for("backlog", containing="60 с")
         page_while_waiting = spook.page().text
 
@@ -98,7 +91,7 @@ def test_while_finishing_page_shows_how_much_sound_is_left_to_recognize(spook):
     spook.start_lecture()
 
     with spook.events() as events:
-        spook.audio.feed(speech(45))  # два отрезка по 20 с; остаток 5 с закроет «Стоп»
+        spook.audio.feed(speech(45))
         spook.clock.advance(45)
         events.wait_for("backlog", containing="40 с")
 
@@ -112,7 +105,7 @@ def test_while_finishing_page_shows_how_much_sound_is_left_to_recognize(spook):
         less = events.wait_for("backlog", containing="25 с")
         spook.recognizer.release()
         events.wait_for("paragraph-update", containing="Вторая.")
-        last = events.wait_for("backlog")  # остался один отрезок — в «завершается» он всё равно виден
+        last = events.wait_for("backlog")
         spook.recognizer.release_all()
         events.wait_for("state", containing="нет Сессии")
 
@@ -130,7 +123,7 @@ def test_on_pause_backlog_stays_visible_until_queue_is_empty(spook):
     spook.start_lecture()
 
     with spook.events() as events:
-        spook.audio.feed(speech(45))  # два отрезка по 20 с; остаток 5 с закроет «Пауза»
+        spook.audio.feed(speech(45))
         spook.clock.advance(45)
         events.wait_for("backlog", containing="40 с")
 

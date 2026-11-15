@@ -1,11 +1,3 @@
-"""Настоящий вход следует за устройством: смена умолчания и пропажа устройства — на подменённых программах PipeWire.
-
-PipeWire здесь не нужен, умолчания пользователя не трогаются: `pw-dump`, `pw-record` и `pw-metadata`
-подменены скриптами-заглушками на PATH. Заглушка `pw-dump` отдаёт дамп из файла, который тест меняет;
-`pw-record` пишет тишину, пока его цель есть в дампе, а без неё завершается с «target not found», как
-настоящий с `node.dont-reconnect=true`; `pw-metadata -m` печатает строки, которые тест дописывает в файл.
-"""
-
 from __future__ import annotations
 
 import json
@@ -45,8 +37,6 @@ def metadata_line(default: str) -> str:
 
 
 class PipeWireStub:
-    """Состояние заглушек: дамп, строки слежения за умолчаниями и журнал целей `pw-record`."""
-
     def __init__(self, directory: Path) -> None:
         self.directory = directory
         self.dump_file = directory / "dump.json"
@@ -93,7 +83,6 @@ def pipewire(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> PipeWireStub:
         script = directory / name
         script.write_text(text, encoding="utf-8")
         script.chmod(0o755)
-    # Заглушки впереди: настоящие программы PipeWire не вызываются, а sh-утилиты заглушкам нужны.
     monkeypatch.setenv("PATH", f"{directory}:/usr/bin:/bin")
     return stub
 
@@ -132,7 +121,7 @@ def test_pinned_capture_ignores_new_default(spook, pipewire: PipeWireStub):
         events.wait_for("state", containing="Колонки")
         pipewire.set_devices(HEADPHONES[0], SPEAKERS, HEADPHONES)
         pipewire.announce_default(HEADPHONES[0])
-        pipewire.announce_default(SPEAKERS[0])  # вернуть умолчание: ни одна из строк не должна сменить устройство
+        pipewire.announce_default(SPEAKERS[0])
         for _ in range(10):
             assert events.wait_for("levels")
 
@@ -146,7 +135,7 @@ def test_lost_output_device_leaves_mark_and_warning_and_capture_continues_from_d
 
     with spook.events() as events:
         events.wait_for("state", containing="Колонки")
-        pipewire.set_devices(HEADPHONES[0], HEADPHONES)  # колонки пропали, умолчание — наушники
+        pipewire.set_devices(HEADPHONES[0], HEADPHONES)
 
         state = events.wait_for("state", containing="Наушники USB")
         mark = events.wait_for("mark", containing="пропало")

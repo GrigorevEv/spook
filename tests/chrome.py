@@ -1,12 +1,3 @@
-"""Фикстуры браузерных тестов: системный Google Chrome через Playwright, браузеры не скачиваются.
-
-Запуск: `uv run pytest -q -m browser`. Снимки сохраняются в папку из переменной окружения
-`SPOOK_SCREENSHOTS`, иначе во временную папку теста. Подключаются один раз как модуль фикстур
-(`pytest_plugins` в `tests/conftest.py`): вложенный `conftest.py` сломал бы `from conftest import …`
-в остальных тестах, а импорт фикстур в каждый модуль заводил бы по своему Playwright на модуль —
-второй падает внутри цикла событий первого.
-"""
-
 from __future__ import annotations
 
 import os

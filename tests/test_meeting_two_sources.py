@@ -1,10 +1,3 @@
-"""Встреча: два Источника, пометки «Я» и «Собеседники», время по часам — главный шов: HTTP, файлы Заметок, поток событий.
-
-Подменённый вход режет звук принудительно по `max_utterance_seconds` (20 секунд), поэтому Реплики
-каждого Источника идут вплотную от его нуля; тишина создаётся отрезками, которые сценарный
-распознаватель считает тишиной. Тексты сценария расходуются в порядке распознавания — в порядке подачи звука.
-"""
-
 from __future__ import annotations
 
 import json
@@ -13,7 +6,7 @@ import numpy as np
 
 from spook.audio import Source
 
-from conftest import MEETING_NOTE_AFTER_START, NOTE_AFTER_START, SAMPLE_RATE, meeting_note_text, note_text, speech
+from conftest import MEETING_NOTE_AFTER_START, NO_SPEECH, NOTE_AFTER_START, SAMPLE_RATE, meeting_note_text, note_text, speech
 
 
 def test_start_of_meeting_creates_note_in_meetings_folder_with_meeting_tag(spook):
@@ -27,9 +20,8 @@ def test_start_of_meeting_creates_note_in_meetings_folder_with_meeting_tag(spook
 
 
 def test_utterances_of_both_sources_get_speaker_and_clock_time(spook):
-    # Как в примере спецификации: собеседники говорят с начала, пользователь отвечает через минуту.
-    spook.recognizer.say("Коллеги, всем привет, начинаем. Сегодня два вопроса…", "", "", "")  # Системный звук, 0–80 с
-    spook.recognizer.say("", "", "", "Привет. По первому: вчера выкатили…")  # Микрофон, 0–80 с
+    spook.recognizer.say("Коллеги, всем привет, начинаем. Сегодня два вопроса…", NO_SPEECH, NO_SPEECH, NO_SPEECH)
+    spook.recognizer.say(NO_SPEECH, NO_SPEECH, NO_SPEECH, "Привет. По первому: вчера выкатили…")
     spook.start_meeting()
     assert spook.audio.active_sources == {Source.SYSTEM, Source.MIC}
 
@@ -48,10 +40,9 @@ def test_utterances_of_both_sources_get_speaker_and_clock_time(spook):
 
 
 def test_change_of_speaker_starts_new_paragraph_even_without_silence(spook):
-    # Реплики идут вплотную: собеседники 0–60 с, пользователь 60–80 с, собеседники снова 80–100 с.
-    spook.recognizer.say("Коллеги, всем привет, начинаем.", "Сегодня два вопроса.", "Первый — релиз.")  # Системный звук, 0–60 с
-    spook.recognizer.say("", "", "", "Привет. По первому: вчера выкатили.")  # Микрофон, 0–80 с
-    spook.recognizer.say("", "Хорошо, продолжаем.")  # Системный звук, 60–100 с
+    spook.recognizer.say("Коллеги, всем привет, начинаем.", "Сегодня два вопроса.", "Первый — релиз.")
+    spook.recognizer.say(NO_SPEECH, NO_SPEECH, NO_SPEECH, "Привет. По первому: вчера выкатили.")
+    spook.recognizer.say(NO_SPEECH, "Хорошо, продолжаем.")
     spook.start_meeting()
 
     spook.audio.feed(speech(60), Source.SYSTEM)
@@ -67,8 +58,8 @@ def test_change_of_speaker_starts_new_paragraph_even_without_silence(spook):
 
 
 def test_later_mic_utterance_is_written_after_earlier_system_utterance_recognized_later(spook):
-    spook.recognizer.say("", "Привет.")  # Микрофон, 0–40 с: Реплика начинается на 20-й секунде
-    spook.recognizer.say("Коллеги, всем привет.")  # Системный звук, 0–20 с: начинается раньше, распознаётся позже
+    spook.recognizer.say(NO_SPEECH, "Привет.")
+    spook.recognizer.say("Коллеги, всем привет.")
     spook.start_meeting()
 
     spook.audio.feed(speech(40), Source.MIC)
@@ -82,7 +73,6 @@ def test_later_mic_utterance_is_written_after_earlier_system_utterance_recognize
         (Source.MIC, 20.0),
         (Source.SYSTEM, 0.0),
     ]
-    # Реплика Микрофона придержана: Системный звук ещё мог дать Реплику, начавшуюся раньше.
     assert while_system_sound_pending == MEETING_NOTE_AFTER_START
     assert meeting_note_text(spook) == MEETING_NOTE_AFTER_START + (
         "\n**14:02 Собеседники:** Коллеги, всем привет.\n"
@@ -100,15 +90,15 @@ def test_page_offers_kind_choice_before_start_and_kind_does_not_change_after_sta
 
     assert response.status_code == 409 and "Сессия уже идёт" in response.text
     during = spook.page().text
-    assert 'name="kind"' not in during  # вид после «Старт» не меняется: выбора на странице нет
+    assert 'name="kind"' not in during
     assert '<span class="kind">Встреча</span>' in during
     assert [path.name for path in spook.meetings_dir.iterdir()] == ["2026-11-06 14-02 Встреча.md"]
     assert not spook.lectures_dir.exists()
 
 
 def test_pause_in_meeting_is_marked_by_clock_and_time_after_pause_goes_by_clock_too(spook):
-    spook.recognizer.say("До Паузы.", "")  # Системный звук и Микрофон до Паузы, по 20 с
-    spook.recognizer.say("", "После Паузы.")  # Системный звук и Микрофон после Паузы, по 20 с
+    spook.recognizer.say("До Паузы.", NO_SPEECH)
+    spook.recognizer.say(NO_SPEECH, "После Паузы.")
     spook.start_meeting()
 
     with spook.events() as events:
@@ -138,7 +128,7 @@ def test_lecture_still_captures_only_system_sound_and_marks_no_speaker(spook):
     spook.start_lecture()
     assert spook.audio.active_sources == {Source.SYSTEM}
 
-    spook.audio.feed(speech(20), Source.MIC)  # Микрофон в Лекции не захватывается: звук пропадает
+    spook.audio.feed(speech(20), Source.MIC)
     spook.audio.feed(speech(20), Source.SYSTEM)
     spook.wait_until(lambda: "Слова лектора." in note_text(spook))
 
@@ -168,6 +158,6 @@ def test_start_of_meeting_without_microphone_is_rejected_with_reason_and_leaves_
     assert response.status_code == 409
     assert "Микрофон" in response.text
     assert "нет Сессии" in spook.page().text
-    assert list(spook.meetings_dir.iterdir()) == []  # Заметка отклонённой Сессии не остаётся
-    assert spook.audio.active_sources == set()  # уже начатый захват Системного звука остановлен
-    assert spook.start_lecture().status_code == 200  # Лекции Микрофон не нужен
+    assert list(spook.meetings_dir.iterdir()) == []
+    assert spook.audio.active_sources == set()
+    assert spook.start_lecture().status_code == 200

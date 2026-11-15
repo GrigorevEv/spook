@@ -1,14 +1,3 @@
-"""Скачивает модели для замера в ~/.local/share/spook/bench/models (в git не попадают).
-
-- onnx-asr: GigaAM-v3 e2e_rnnt int8 (и fp32 для сравнения) из HF `istupakov/gigaam-v3-onnx` (MIT),
-  Silero VAD из HF `onnx-community/silero-vad` (как его называет onnx-asr).
-- sherpa-onnx: архив `sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16.tar.bz2`
-  из релиза asr-models k2-fsa/sherpa-onnx (вариант с пунктуацией = e2e_rnnt, int8-энкодер).
-
-Запуск:
-    uv run --no-project --with "onnx-asr[cpu,hub]" python fetch_models.py [--fp32] [--no-sherpa]
-"""
-
 from __future__ import annotations
 
 import sys
@@ -34,12 +23,8 @@ def fetch_onnx_asr(fp32: bool) -> None:
     onnx_asr.load_model("gigaam-v3-e2e-rnnt", ONNX_ASR_DIR, quantization="int8")
     print(f"onnx-asr int8 → {ONNX_ASR_DIR} ({time.perf_counter() - t0:.0f} с, включая загрузку в память)")
     if fp32:
-        # В существующий каталог onnx-asr сам ничего не докачивает — берём файлы fp32 напрямую.
-        from huggingface_hub import hf_hub_download
-
         t0 = time.perf_counter()
-        for name in ("v3_e2e_rnnt_encoder.onnx", "v3_e2e_rnnt_decoder.onnx", "v3_e2e_rnnt_joint.onnx"):
-            hf_hub_download("istupakov/gigaam-v3-onnx", name, local_dir=ONNX_ASR_DIR)
+        _fetch_fp32_into_existing_dir()
         onnx_asr.load_model("gigaam-v3-e2e-rnnt", ONNX_ASR_DIR)
         print(f"onnx-asr fp32 → {ONNX_ASR_DIR} ({time.perf_counter() - t0:.0f} с)")
     onnx_asr.load_vad("silero", VAD_DIR)
@@ -47,6 +32,13 @@ def fetch_onnx_asr(fp32: bool) -> None:
     for p in sorted(ONNX_ASR_DIR.rglob("*")):
         if p.is_file():
             print(f"  {p.relative_to(MODELS_DIR)}  {p.stat().st_size / 1024 / 1024:.1f} МБ")
+
+
+def _fetch_fp32_into_existing_dir() -> None:
+    from huggingface_hub import hf_hub_download
+
+    for name in ("v3_e2e_rnnt_encoder.onnx", "v3_e2e_rnnt_decoder.onnx", "v3_e2e_rnnt_joint.onnx"):
+        hf_hub_download("istupakov/gigaam-v3-onnx", name, local_dir=ONNX_ASR_DIR)
 
 
 def fetch_sherpa() -> None:

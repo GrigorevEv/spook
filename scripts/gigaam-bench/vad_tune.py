@@ -1,19 +1,3 @@
-"""Подбор параметров детектора речи (Silero VAD через onnx-asr) и проверка качества на окнах.
-
-Что делается:
-1. Порог паузы: на образцах «фраза — пауза — фраза» (паузы 300…1500 мс) считаем, сколько Реплик даёт
-   детектор при разных min_silence_duration_ms; ищем наименьший порог, при котором фразы не рвутся внутри.
-2. Принудительный разрез: непрерывная речь 48 с без пауз → max_speech_duration_s=20; смотрим длины
-   отрезков и качество (WER) склеенного текста против эталона.
-3. Качество на окнах: Реплика 20 с целиком против нарезки детектором на окна ≤ 5 и ≤ 10 с и против
-   слепой нарезки на 2,5 / 5 / 10 с (WER против эталонного текста).
-4. Пунктуация и числа: тексты образцов с числительными (RuLS) и синтеза Piper; считаем цифры и знаки.
-5. Скорость детектора на 300 с звука.
-
-Запуск:
-    uv run --no-project --with "onnx-asr[cpu,hub]" --with numpy python vad_tune.py
-"""
-
 from __future__ import annotations
 
 import re
@@ -32,7 +16,6 @@ THREADS = 4
 
 
 def segments(vad, x: np.ndarray, **opts) -> list[tuple[float, float]]:
-    """Границы речи (с) по детектору без распознавания."""
     it = vad.segment_batch(x[None, :], np.array([len(x)], dtype=np.int64), SAMPLE_RATE, **opts)
     return [(s / SAMPLE_RATE, e / SAMPLE_RATE) for s, e in next(it)]
 
@@ -54,7 +37,6 @@ def main() -> None:
     manifest = load_json(SAMPLES_DIR / "samples.json")
     report: dict = {"threads": THREADS, "loadavg": wait_for_quiet()}
 
-    # 1. Порог паузы.
     base = {"threshold": 0.5, "min_speech_duration_ms": 250, "max_speech_duration_s": 20, "speech_pad_ms": 100}
     pause_table = []
     print("1. Порог паузы: число Реплик (ожидаем 3 фразы) при разных min_silence_duration_ms")
@@ -68,12 +50,10 @@ def main() -> None:
         pause_table.append(row)
         print(f"{pause_ms:>14} | " + " | ".join(f"{len(row['segments'][ms]):>5}" for ms in (100, 200, 300, 400, 500, 700, 1000)))
     report["pause_threshold"] = pause_table
-    # Внутренние разрывы фраз: сколько Реплик даёт детектор на одной непрерывной фразе (без пауз).
     for ms in (100, 200, 300, 500):
         x = read_wav(SAMPLES_DIR / "utt_10s.wav")
         print(f"   одна фраза 10 с, min_silence={ms} мс → Реплик: {len(segments(vad, x, **base, min_silence_duration_ms=ms))}")
 
-    # 2. Принудительный разрез.
     print("\n2. Принудительный разрез непрерывной речи 48 с (max_speech_duration_s=20)")
     x = read_wav(SAMPLES_DIR / "speech_45s.wav")
     ref = manifest["speech_45s.wav"]["text"]
@@ -93,14 +73,12 @@ def main() -> None:
             "texts": [r.text for r in res],
         }
         print(f"   min_silence={min_sil} мс: отрезки {forced[min_sil]['lengths_s']} с, WER {forced[min_sil]['wer']:.3f}, время {dt:.2f} с")
-    # Для сравнения — целиком (48 с > предела 25 с модели).
     t0 = time.perf_counter()
     whole = model.recognize(x, sample_rate=SAMPLE_RATE)
     print(f"   целиком 48 с (сверх предела): WER {wer(ref, whole):.3f}, время {time.perf_counter() - t0:.2f} с, слов {len(whole.split())} из {len(ref.split())}")
     forced["whole_48s"] = {"wer": round(wer(ref, whole), 3), "text": whole}
     report["forced_cut"] = forced
 
-    # 3. Качество на окнах.
     print("\n3. Качество Реплики 20 с: целиком против окон")
     windows = {}
     for name in ("utt_20s_a.wav", "utt_20s_b.wav"):
@@ -121,7 +99,6 @@ def main() -> None:
                 print(f"   {name} {k:>12}: WER {v['wer']:.3f}")
     report["windows"] = windows
 
-    # 4. Пунктуация и числа.
     print("\n4. Пунктуация и числа")
     numbers = []
     for name in sorted(n for n in manifest if n.startswith("num_") or n.startswith("synth_")):
@@ -133,7 +110,6 @@ def main() -> None:
         print(f"   {name}: цифры {digits}, знаков {punct}\n      эталон: {manifest[name]['text']}\n      вывод:  {text}")
     report["numbers"] = numbers
 
-    # 5. Скорость детектора.
     x = read_wav(SAMPLES_DIR / "stream_a_300s.wav")
     t0 = time.perf_counter()
     segs = segments(vad, x, **base, min_silence_duration_ms=500)

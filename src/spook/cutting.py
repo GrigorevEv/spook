@@ -1,21 +1,3 @@
-"""Нарезка звука Источника на Реплики по паузам (ADR-0002).
-
-Детектор речи смотрит на звук кадрами и отвечает, насколько кадр похож на речь; по его ответам
-нарезчик находит речь и паузы. Параметры — `RecognitionSettings`, умолчания — итоги замера (задача 01):
-
-- речь начинается, когда вероятность речи дошла до порога, и кончается, когда упала ниже порога − 0,15;
-- Реплика закрывается, когда после речи тишина длится `min_silence_duration_ms` + 2 × `speech_pad_ms`
-  (0,7 с по умолчанию): короткие паузы внутри фразы её не рвут — короче необходимого не режем;
-- к краям Реплики добавляется `speech_pad_ms` звука — сколько есть и не залезая в предыдущую Реплику;
-- речь короче `min_speech_duration_ms` (щелчок, вздох) Репликой не считается, а тишина в распознавание
-  не идёт вовсе;
-- Реплика, доросшая до `max_utterance_seconds`, режется принудительно по последней паузе не короче
-  `forced_cut_min_pause_ms`, а если такой паузы нет — жёстко по пределу;
-- «Пауза» и «Стоп» закрывают текущую Реплику (`flush`).
-
-Время отрезка — от начала захвата Источника, Паузы Сессии в него не входят.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -26,16 +8,10 @@ import numpy as np
 from spook.audio import SAMPLE_RATE, AudioSegment, Source
 from spook.settings import RecognitionSettings
 
-END_OF_SPEECH_MARGIN = 0.15  # речь кончается, когда вероятность ниже порога на столько (как в onnx-asr)
+END_OF_SPEECH_MARGIN = 0.15
 
 
 class SpeechDetector(Protocol):
-    """Детектор речи одного потока звука: кадр → вероятность речи от 0 до 1.
-
-    Кадр — `frame_samples` отсчётов float32, моно, 16 кГц; кадры идут подряд, и детектор может помнить
-    предыдущие (у Silero это состояние сети), поэтому у каждого Источника Сессии свой детектор.
-    """
-
     @property
     def frame_samples(self) -> int: ...
 
@@ -43,17 +19,14 @@ class SpeechDetector(Protocol):
 
 
 SpeechDetectorFactory = Callable[[], SpeechDetector]
-"""Создаёт детектор для нового потока звука — по одному на Источник Сессии."""
 
 
 @dataclass
 class _OpenUtterance:
-    """Незакрытая Реплика; позиции — номера отсчётов от начала захвата."""
-
-    start: int  # начало вместе с запасом
+    start: int
     speech_start: int
-    speech_end: int  # конец последней речи
-    pauses: list[tuple[int, int]] = field(default_factory=list)  # паузы между речью внутри Реплики
+    speech_end: int
+    pauses: list[tuple[int, int]] = field(default_factory=list)
 
 
 def _samples(milliseconds: float) -> int:
@@ -61,8 +34,6 @@ def _samples(milliseconds: float) -> int:
 
 
 class UtteranceCutter:
-    """Принимает звук одного Источника порциями и отдаёт закрытые Реплики отрезками звука."""
-
     def __init__(self, source: Source, settings: RecognitionSettings, detector: SpeechDetector) -> None:
         self._source = source
         self._detector = detector
@@ -75,14 +46,13 @@ class UtteranceCutter:
         self._min_forced_pause = _samples(settings.forced_cut_min_pause_ms)
         self._max = int(round(settings.max_utterance_seconds * SAMPLE_RATE))
         self._buffer = np.empty(0, dtype=np.float32)
-        self._base = 0  # позиция первого отсчёта буфера
-        self._checked = 0  # до этой позиции звук уже показан детектору
-        self._free_from = 0  # раньше звук уже отдан в Реплики: следующая начнётся не раньше
+        self._base = 0
+        self._checked = 0
+        self._free_from = 0
         self._speaking = False
         self._utterance: _OpenUtterance | None = None
 
     def push(self, samples: np.ndarray) -> list[AudioSegment]:
-        """Принимает порцию звука и возвращает закрытые Реплики (возможно, ни одной)."""
         self._buffer = np.concatenate([self._buffer, np.asarray(samples, dtype=np.float32)])
         segments: list[AudioSegment] = []
         while self._checked + self._frame <= self._end:
@@ -91,13 +61,11 @@ class UtteranceCutter:
             self._checked += self._frame
             self._on_frame(position, self._detector.speech_probability(frame), segments)
             self._cut_if_too_long(self._checked, segments)
-        # Неполный кадр в конце детектор ещё не видел: считается, что речь или тишина продолжается.
         self._cut_if_too_long(self._end, segments)
         self._forget_used()
         return segments
 
     def flush(self) -> AudioSegment | None:
-        """Закрывает текущую Реплику — при «Пауза» и «Стоп»."""
         segments: list[AudioSegment] = []
         utterance = self._utterance
         if utterance is not None:
@@ -110,16 +78,13 @@ class UtteranceCutter:
         return segments[0] if segments else None
 
     @property
-    def position(self) -> float:
-        """Начало следующего отрезка в секундах: раньше него Источник уже ничего не даст —
-        начало незакрытой Реплики, а без неё — самое раннее начало новой (с запасом перед речью)."""
+    def next_segment_start(self) -> float:
         if self._utterance is not None:
             return self._utterance.start / SAMPLE_RATE
         return max(self._free_from, self._checked - self._pad) / SAMPLE_RATE
 
     @property
     def buffered_seconds(self) -> float:
-        """Сколько звука накоплено и ещё может войти в Реплику."""
         return len(self._buffer) / SAMPLE_RATE
 
     @property
@@ -146,7 +111,6 @@ class UtteranceCutter:
             self._close(utterance.speech_end + self._pad, segments)
 
     def _cut_if_too_long(self, reached: int, segments: list[AudioSegment]) -> None:
-        """Принудительный разрез Реплики, доросшей до предела: по последней паузе, без неё — жёстко."""
         while (utterance := self._utterance) is not None and reached - utterance.start >= self._max:
             limit = utterance.start + self._max
             current_pause = min(self._checked, limit) - utterance.speech_end
@@ -185,7 +149,6 @@ class UtteranceCutter:
         return AudioSegment(source=self._source, samples=samples, start=start / SAMPLE_RATE)
 
     def _forget_used(self) -> None:
-        """Отбрасывает звук, который больше не понадобится: отданный и тишину старше запаса."""
         if self._utterance is not None:
             keep_from = self._utterance.start
         else:

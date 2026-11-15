@@ -1,9 +1,3 @@
-"""Проверка, что sherpa-onnx с архивом punct-giga-am-v3 даёт тот же текст, что onnx-asr (один образец).
-
-Запуск:
-    uv run --no-project --with sherpa-onnx --with numpy python sherpa_check.py
-"""
-
 from __future__ import annotations
 
 import sys

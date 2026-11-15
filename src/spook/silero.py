@@ -1,11 +1,3 @@
-"""Настоящий детектор речи — Silero VAD через onnx-asr (выбор задачи 01, `docs/research/gigaam-benchmark.md`).
-
-Модель маленькая (около 2 МБ): onnx-asr скачивает её сам при первой загрузке в каталог данных
-пользователя (`~/.local/share/spook/models/silero-vad`) и дальше берёт оттуда. Загружается при первом
-«Старт»: в простое служба только ждёт. Одна модель на все потоки звука, состояние сети — у каждого своё.
-Кадр — 512 отсчётов (32 мс) при 16 кГц; спереди к нему, как в onnx-asr, приложены 64 отсчёта предыдущего.
-"""
-
 from __future__ import annotations
 
 import shutil
@@ -28,8 +20,6 @@ def default_model_dir() -> Path:
 
 
 class SileroSpeechDetector:
-    """Детектор речи одного потока звука на общей модели Silero."""
-
     frame_samples = FRAME_SAMPLES
 
     def __init__(self, model: Any) -> None:
@@ -49,8 +39,6 @@ class SileroSpeechDetector:
 
 
 class SileroSpeechDetection:
-    """Создаёт детекторы Silero; модель загружается (и при нужде скачивается) при первом детекторе."""
-
     def __init__(self, model_dir: Path | None = None) -> None:
         self._model_dir = model_dir or default_model_dir()
         self._model: Any = None
@@ -68,9 +56,6 @@ def model_is_present(model_dir: Path | None = None) -> bool:
 
 
 def prepare_model(model_dir: Path | None = None) -> bool:
-    """Скачивает модель Silero в `model_dir`, если её там нет; True — скачана сейчас. Её вызывает
-    `spook prepare`, чтобы «Старт» не зависел от сети. Скачивание идёт во временный соседний каталог,
-    на место переносится готовый файл. При неудаче — `RecognitionUnavailable` с причиной."""
     from spook.recognizer import RecognitionUnavailable
 
     target = model_dir or default_model_dir()
@@ -87,14 +72,13 @@ def prepare_model(model_dir: Path | None = None) -> bool:
         raise RecognitionUnavailable(f"Модель детектора речи не скачана в {target}: {error}") from error
     finally:
         shutil.rmtree(partial, ignore_errors=True)
-        for empty in (target, target.parent):  # не оставлять пустых каталогов после неудачи
+        for empty in (target, target.parent):
             if empty.is_dir() and not any(empty.iterdir()):
                 empty.rmdir()
     return True
 
 
 def load_model(model_dir: Path) -> Any:
-    """Сессия onnxruntime с моделью Silero; модели нет — onnx-asr скачивает её в `model_dir`."""
     import onnxruntime
 
     if not (model_dir / MODEL_FILE).is_file():
@@ -102,7 +86,6 @@ def load_model(model_dir: Path) -> Any:
 
         onnx_asr.load_vad("silero", model_dir)
     options = onnxruntime.SessionOptions()
-    # Модель крошечная и считается по кадру: лишние потоки только мешали бы распознавателю.
     options.intra_op_num_threads = 1
     options.inter_op_num_threads = 1
     return onnxruntime.InferenceSession(

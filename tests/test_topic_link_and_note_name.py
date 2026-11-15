@@ -1,5 +1,3 @@
-"""Тема, Ссылка и имя Заметки — через HTTP-интерфейс службы, файлы Заметок и поток событий."""
-
 from __future__ import annotations
 
 from conftest import speech
@@ -43,7 +41,6 @@ def test_long_topic_is_cut_to_80_characters(spook):
 
 
 def finish_session(spook) -> None:
-    """«Стоп» после одной Реплики: пустую Заметку Сессия без Реплик удалила бы."""
     spook.recognizer.say("Реплика.")
     spook.audio.feed(speech(20))
     spook.stop()
@@ -136,7 +133,7 @@ def test_topic_and_link_commands_without_session_are_rejected_with_reason(spook)
 
 
 def test_topic_entered_during_session_renames_note_only_after_stop(spook):
-    spook.write_settings(auto_stop_minutes=60)  # Лекция молчит 45 минут до «Стоп»: автостоп не должен успеть
+    spook.write_settings(auto_stop_minutes=60)
     spook.recognizer.say("Лидер рассылает записи журнала.")
     spook.start_lecture()
     with spook.events() as events:

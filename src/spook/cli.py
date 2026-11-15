@@ -1,14 +1,3 @@
-"""Команда `spook`: `spook serve` запускает службу, `spook prepare` скачивает модели распознавания
-и детектора речи (её вызывает установка), `spook demo` — показ на подменах, `spook topic` — Тема
-от Агента, `spook install` / `spook uninstall` — установка для пользователя (см. `install.py`).
-
-`spook topic <путь к Заметке> <Тема>` вызывает Скилл Агента (в шапке — `Bash(spook topic *)`), когда
-у Заметки нет Темы. Команда работает без переменных окружения сессии: порт службы берётся из файла
-настроек (`~/.config/spook/settings.toml` или `--settings`), запрос идёт к `127.0.0.1:<порт>`.
-Проверяет условия и переименовывает сама служба; команда печатает новый путь в stdout и завершается
-кодом 0, при отказе — причина в stderr и код 1.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -81,24 +70,20 @@ def serve(settings_path: Path | None) -> None:
     exit_quietly_on_stop_signals()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     load = partial(load_settings, settings_path)
-    settings = load()
-    # Вход звука — PipeWire: устройства по умолчанию или закреплённые в `[sources]` настроек (читаются при «Старт»).
-    # Распознаватель — GigaAM: модель загружается в память при первом «Старт», в простое служба только ждёт.
-    # Параметры модели из `[recognition]` берутся при запуске службы.
-    if not model_is_present(settings.recognition):
-        log.warning("Модель распознавания не скачана в %s: выполните `spook prepare`", settings.recognition.model_dir)
+    startup_settings = load()
+    if not model_is_present(startup_settings.recognition):
+        log.warning("Модель распознавания не скачана в %s: выполните `spook prepare`", startup_settings.recognition.model_dir)
     app = create_app(
         load_settings=load,
         audio_input=PipeWireAudioInput(),
-        recognizer=GigaamRecognizer(settings.recognition),
+        recognizer=GigaamRecognizer(startup_settings.recognition),
         clock=SystemClock(),
         settings_path=settings_path or default_settings_path(),
     )
-    make_server(app, port=settings.port).run()
+    make_server(app, port=startup_settings.port).run()
 
 
 def prepare(settings_path: Path | None) -> int:
-    """Скачивает модели распознавания и детектора речи один раз; те, что уже есть, не трогает. Код выхода."""
     from spook import silero
     from spook.recognizer import RecognitionUnavailable, model_is_present, prepare_model
 
@@ -122,8 +107,6 @@ def prepare(settings_path: Path | None) -> int:
 
 
 def topic(settings_path: Path | None, note: Path, topic: str) -> int:
-    """Сообщает службе Тему Заметки; новый путь — в stdout, код 0. Отказ службы или её отсутствие —
-    причина в stderr, код 1."""
     url = f"http://127.0.0.1:{load_settings(settings_path).port}/agent/topic"
     body = urllib.parse.urlencode({"note": str(note.absolute()), "topic": topic}).encode("utf-8")
     request = urllib.request.Request(url, data=body, method="POST")
@@ -142,7 +125,6 @@ def topic(settings_path: Path | None, note: Path, topic: str) -> int:
 
 
 def install(command: str, repo: Path | None) -> int:
-    """`spook install` / `spook uninstall` для текущего пользователя; код выхода."""
     from spook import install as installation
 
     repo = repo or installation.find_repo(Path(__file__).resolve().parent) or installation.find_repo(Path.cwd())

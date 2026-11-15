@@ -1,17 +1,3 @@
-"""Один настоящий запуск Claude Code через службу — как в пробе (задача 02), но целиком через Spook.
-
-Тратит лимиты подписки (дешёвая модель, effort low), поэтому включается только явно: `-m claude`.
-Нужен включённый VPN (иначе хук пользователя заблокирует запуск) — без него тест пропускается.
-
-Раскладка временная, в `~/.cache/` (права Скилла заданы путями `~/…/**`, как у настоящих Скиллов):
-папка Встреч с проектным Скиллом `.claude/skills/spook-probe/SKILL.md`, который дописывает
-Выжимку-заглушку. Служба поднимается в процессе теста на подменённом звуке и распознавателе;
-сам `claude` идёт по полному пути через обёртку `systemd-run --user` — в чистом окружении
-пользовательского менеджера systemd, как у службы Spook. После теста раскладка удаляется, данные
-Claude Code о ней — командой `claude purge`. Если задан `SPOOK_REAL_CLAUDE_ARTIFACTS`, туда
-копируются журнал запуска и Заметка после Агента.
-"""
-
 from __future__ import annotations
 
 import os
@@ -25,7 +11,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from conftest import SESSION_START, free_port, speech
+from conftest import NO_SPEECH, SESSION_START, free_port, speech
 from spook.audio import Source
 from spook.clock import ManualClock
 from spook.fakes import FakeAudioInput, ScriptedRecognizer
@@ -70,7 +56,6 @@ def vpn_is_up() -> bool:
 
 @pytest.fixture
 def layout():
-    """Временная раскладка в `~/.cache/`; после теста удаляется вместе с данными Claude Code о ней."""
     cache = Path("~/.cache").expanduser()
     cache.mkdir(exist_ok=True)
     root = Path(tempfile.mkdtemp(prefix="spook-real-claude-", dir=cache))
@@ -135,7 +120,7 @@ def test_real_claude_code_writes_summary_and_run_is_done_with_full_output_in_jou
                 assert time.monotonic() < deadline, "служба не поднялась"
                 time.sleep(0.01)
             recognizer.say("Коллеги, привет. Договорились выкатить релиз в пятницу.")
-            recognizer.say("")
+            recognizer.say(NO_SPEECH)
             assert http.post(f"{base}/session/start", data={"kind": "meeting", "topic": ""}).status_code == 200
             audio.feed(speech(20), Source.SYSTEM)
             audio.feed(speech(20), Source.MIC)

@@ -1,10 +1,3 @@
-"""Установка `spook install` / `spook uninstall`: приложение как инструмент `uv`, пользовательская служба
-systemd, значок «Spook» в меню, Скиллы из репозитория и модель распознавания.
-
-Внешние команды подменены записью вызовов, домашний каталог — временный. Настоящие проверщики
-`desktop-file-validate` и `systemd-analyze --user verify` прогоняются на сгенерированных файлах.
-"""
-
 from __future__ import annotations
 
 import configparser
@@ -19,8 +12,6 @@ from spook.install import install, uninstall
 
 
 class Recorder:
-    """Подмена запуска внешних команд: запоминает вызовы."""
-
     def __init__(self) -> None:
         self.commands: list[list[str]] = []
 
@@ -47,7 +38,7 @@ def home(tmp_path: Path) -> Path:
 
 def read_ini(path: Path) -> configparser.ConfigParser:
     parser = configparser.ConfigParser(strict=False, interpolation=None)
-    parser.optionxform = str  # ключи с заглавными буквами
+    parser.optionxform = str
     parser.read(path, encoding="utf-8")
     return parser
 
@@ -77,17 +68,14 @@ def test_service_unit_runs_installed_spook_serve_with_path_to_user_programs(tmp_
 
     assert unit["Service"]["ExecStart"] == "%h/.local/bin/spook serve"
     assert unit["Service"]["Restart"] == "on-failure"
-    # Environment= повторяется; configparser оставил бы только последнее значение.
     environment = [
         line.removeprefix("Environment=")
         for line in unit_path.read_text(encoding="utf-8").splitlines()
         if line.startswith("Environment=")
     ]
     path = next(item.removeprefix("PATH=") for item in environment if item.startswith("PATH=")).split(":")
-    assert path[0] == "%h/.local/bin"  # Claude Code, uv и сама `spook` для `spook topic` Агента
-    assert "/usr/bin" in path  # notify-send, xdg-open
-    # Служба поднимается вместе с графическим сеансом: тогда у неё есть DISPLAY, WAYLAND_DISPLAY и
-    # XDG_CURRENT_DESKTOP для открытия файлов (в default.target их ещё нет).
+    assert path[0] == "%h/.local/bin"
+    assert "/usr/bin" in path
     assert unit["Install"]["WantedBy"] == "graphical-session.target"
     assert "graphical-session.target" in unit["Unit"]["After"]
 
@@ -118,10 +106,10 @@ def test_menu_entry_passes_desktop_file_validate(tmp_path, home):
 @pytest.mark.skipif(shutil.which("systemd-analyze") is None, reason="нет systemd-analyze")
 def test_service_unit_passes_systemd_analyze_verify(tmp_path, home):
     install(make_repo(tmp_path), home=home, port=8765, run=Recorder())
-    spook = home / ".local/bin/spook"  # `%h` раскрывается в HOME; ExecStart обязан существовать
-    spook.parent.mkdir(parents=True)
-    spook.write_text("#!/bin/sh\n", encoding="utf-8")
-    spook.chmod(0o755)
+    executable_required_by_verify = home / ".local/bin/spook"
+    executable_required_by_verify.parent.mkdir(parents=True)
+    executable_required_by_verify.write_text("#!/bin/sh\n", encoding="utf-8")
+    executable_required_by_verify.chmod(0o755)
 
     result = subprocess.run(
         ["systemd-analyze", "--user", "verify", str(home / ".config/systemd/user/spook.service")],
@@ -187,7 +175,6 @@ def test_repeated_install_is_safe_and_changes_nothing(tmp_path, home):
 
     assert {path: path.read_text(encoding="utf-8") for path in files} == files
     assert (home / ".claude/skills/spook-probe").resolve() == (repo / "skills/spook-probe").resolve()
-    # Модель скачивает `spook prepare` только если её нет; служба перезапускается на новой копии.
     assert [str(home / ".local/bin/spook"), "prepare"] in run.commands
     assert ["systemctl", "--user", "try-restart", "spook.service"] in run.commands
 
