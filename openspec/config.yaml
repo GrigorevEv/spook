@@ -6,10 +6,22 @@ context: |
   Keep OpenSpec structural headings and SHALL/MUST keywords in English.
   Terms come strictly from GLOSSARY.md (Сессия, Источник, Реплика, Заметка, Выжимка…); no synonyms.
   Decisions and their reasons live in docs/adr/; specs describe behaviour only.
+  An OpenSpec change is only for a change in behaviour: issue type feature.
+  Other issue types get no change, and skip_specs is never used:
+  - bug: code diverges from a spec; a test and a fix, specs untouched.
+    A requirement missing from the specs is feature, not bug.
+  - chore: no behaviour change (refactoring, CI, dependencies).
+  - documentation: documentation only.
+  - research: an open question the code or behaviour depends on (docs/research/README.md).
+  Work that needs more than one change is an epic, split into sub-issues (AGENTS.md, «Трекер»).
+  If the request is not a single feature change, stop before creating a change
+  (delete the change if this run already created it) and name the issue type that fits.
 
 rules:
   proposal:
     - "The first line is `Issue: #<number>` — the GitHub issue this change comes from. If the user gave no issue number, ask for it before writing."
+  design:
+    - A decision that meets all three criteria in docs/adr/README.md goes into a new ADR in the same PR, and design.md links to it. design.md keeps only decisions local to this change.
   tasks:
     - Spikes and prototypes are the first tasks; each says which tasks it blocks.
     - Every task is executable by an agent without the user's participation.
