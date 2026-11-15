@@ -43,7 +43,7 @@ openspec init --tools <агент>   # claude, opencode, codex…
 
 | # | Что сделать | Что получится |
 |---|---|---|
-| 1 | Ветка `<N>-<change>`, `openspec-propose <change>` | `proposal.md`, дельты спек (критерии приёмки issue — их сценарии), `design.md`, `tasks.md` |
+| 1 | Ветка `<N>-<change>`, `openspec-propose <change>` | `proposal.md`, дельты спек, `design.md`, `tasks.md` |
 | 2 | Прочитать `proposal.md` и дельты, `commit` | План согласован до кода |
 | 3 | Новая сессия, `tdd`, `openspec-apply-change <change>` | Код, отмеченные задачи |
 | 4 | `openspec-verify-change <change>` | Код соответствует спеке |
