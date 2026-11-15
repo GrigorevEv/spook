@@ -1,5 +1,3 @@
-"""Файл настроек: умолчания из спецификации, частичный файл дополняется умолчаниями."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,7 +17,6 @@ def test_settings_without_file_have_defaults_from_spec(tmp_path: Path):
     assert settings.auto_stop_minutes == 5
     assert settings.terms_dictionary == Path.home() / "Documents/notes/работа/Словарь терминов.md"
     assert settings.recognition.max_utterance_seconds == 20
-    # Детектор речи — итоги замера задачи 01 (docs/research/gigaam-benchmark.md).
     assert settings.recognition.speech_threshold == 0.5
     assert settings.recognition.min_silence_duration_ms == 500
     assert settings.recognition.min_speech_duration_ms == 250

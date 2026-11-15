@@ -1,5 +1,3 @@
-"""Источники идущей Сессии: название устройства и уровень сигнала идут потоком событий и видны на странице."""
-
 from __future__ import annotations
 
 import json
@@ -11,7 +9,6 @@ from conftest import SAMPLE_RATE
 
 
 def sine(seconds: float, amplitude: float, frequency: float = 440.0) -> np.ndarray:
-    """Синус заданной амплитуды: его RMS = амплитуда/√2, пик = амплитуда."""
     moments = np.arange(int(seconds * SAMPLE_RATE)) / SAMPLE_RATE
     return (amplitude * np.sin(2 * np.pi * frequency * moments)).astype(np.float32)
 
@@ -36,7 +33,7 @@ def test_levels_event_carries_rms_and_peak_of_source_signal(spook):
     spook.start_lecture()
 
     with spook.events() as events:
-        events.wait_for("state")  # страница получила состояние — значит, подписана и на уровни
+        events.wait_for("state")
         spook.audio.feed(sine(0.5, amplitude=0.5))
         levels = events.wait_for("levels")
 

@@ -1,8 +1,6 @@
-"""Лекция от «Старт» до «Стоп» на подменах — главный шов, HTTP-интерфейс службы."""
-
 from __future__ import annotations
 
-from conftest import NOTE_AFTER_START, note_text, speech
+from conftest import NO_SPEECH, NOTE_AFTER_START, note_text, speech
 
 
 def test_start_of_lecture_creates_note_in_lectures_folder(spook):
@@ -26,7 +24,7 @@ def test_long_speech_is_cut_into_utterances_of_20_seconds_with_time_from_session
 
 
 def test_silence_is_not_written_to_note(spook):
-    spook.recognizer.say("Слова.", "", "Ещё слова.")
+    spook.recognizer.say("Слова.", NO_SPEECH, "Ещё слова.")
     spook.start_lecture()
 
     with spook.events() as events:
@@ -40,7 +38,7 @@ def test_silence_is_not_written_to_note(spook):
 
 
 def test_stop_recognizes_remainder_writes_end_and_returns_to_no_session(spook):
-    spook.write_settings(auto_stop_minutes=60)  # Лекция молчит 45 минут до «Стоп»: автостоп не должен успеть
+    spook.write_settings(auto_stop_minutes=60)
     spook.recognizer.say("Начало.", "Хвост.")
     spook.start_lecture()
 
@@ -69,7 +67,7 @@ def test_stop_recognizes_remainder_writes_end_and_returns_to_no_session(spook):
 
 
 def test_event_stream_opens_with_full_current_state_and_then_changes(spook):
-    spook.recognizer.say("Сказано раньше.", "", "Сказано позже.")
+    spook.recognizer.say("Сказано раньше.", NO_SPEECH, "Сказано позже.")
     spook.start_lecture()
     with spook.events() as events:
         spook.audio.feed(speech(20))

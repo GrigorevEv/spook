@@ -1,12 +1,3 @@
-"""Список Сессий для экрана «Заметки»: собирается по файлам папок видов, базы данных нет.
-
-Сессия в списке — файл `ГГГГ-ММ-ДД ЧЧ-ММ <Тема>.md` в папке Встреч или Лекций из настроек;
-остальные заметки Хранилища в список не попадают. Удалили файл — Сессии в списке нет.
-
-Состояние Выжимки берётся из очереди Агента, если в нынешней работе службы у Заметки был
-запуск, иначе по файлу: Выжимка над Транскриптом есть — «готово», нет — «нет».
-"""
-
 from __future__ import annotations
 
 import os
@@ -26,20 +17,18 @@ _TIME = re.compile(r"^(\d{1,2}):(\d{2})$")
 
 @dataclass(frozen=True)
 class NoteEntry:
-    """Сессия в списке: что показать в строке и какие действия доступны."""
-
     path: Path
     kind: SessionKind
-    started: str  # «2026-11-06 14:02»
-    topic: str  # пустая строка — Темы нет
-    duration: str  # пустая строка — конца нет (Сессия идёт или прервана)
+    started: str
+    topic: str
+    duration: str
     summary: SummaryState
-    message: str = ""  # причина ошибки Агента
-    warning: str = ""  # предупреждение Агента (охрана Транскрипта)
-    has_summary: bool = False  # Выжимка в файле есть — запуск Агента напишет её заново
+    message: str = ""
+    warning: str = ""
+    has_summary: bool = False
     has_log: bool = False
-    in_session: bool = False  # Заметка идущей Сессии: Агента для неё не запускают
-    folder_kind: SessionKind | None = None  # вид папки Заметки: по нему — журнал Агента; `None` — как `kind`
+    in_session: bool = False
+    folder_kind: SessionKind | None = None
 
     @property
     def log_kind(self) -> SessionKind:
@@ -59,12 +48,10 @@ WIKI_TIMEOUT_SECONDS = 30
 
 
 class NoteRefused(Exception):
-    """Команда экрана «Заметки» отклонена; текст — причина для пользователя."""
+    pass
 
 
 def find_note(settings: Settings, raw: str) -> tuple[Path, SessionKind]:
-    """Заметка, названная командой, и вид её папки: только Заметка Сессии прямо в папке Встреч
-    или Лекций из настроек (`note.find_session_note`)."""
     try:
         return find_session_note(raw, settings.kind_folders())
     except NoteNotFound as error:
@@ -72,13 +59,10 @@ def find_note(settings: Settings, raw: str) -> tuple[Path, SessionKind]:
 
 
 def obsidian_uri(path: Path) -> str:
-    """Адрес Заметки для Obsidian: `obsidian://open?path=<абсолютный путь>`, путь целиком закодирован."""
     return "obsidian://open?path=" + quote(str(path), safe="")
 
 
 def open_uri(program: str, uri: str) -> None:
-    """Открывает адрес системным средством открытия (`[programs].open`): браузер со страницы
-    `http://` локальные файлы и `obsidian://` сам не откроет."""
     try:
         completed = subprocess.run(
             [program, uri],
@@ -96,9 +80,6 @@ def open_uri(program: str, uri: str) -> None:
 
 
 def wiki_page_uri(command: str, note_name: str) -> str:
-    """Адрес страницы Вики для Заметки Лекции — у инструмента Вики (`<command> file <имя заметки>`),
-    а не вычисленный приложением. Инструмент печатает `file://`-адрес; если страницы нет, он
-    отвечает ненулевым кодом и причиной."""
     argv = [os.path.expanduser(part) for part in shlex.split(command)] + ["file", note_name]
     try:
         completed = subprocess.run(
@@ -122,8 +103,7 @@ def wiki_page_uri(command: str, note_name: str) -> str:
 
 
 REWRITE_WARNING = "Выжимка будет написана заново: прежняя Выжимка заменится новой"
-# Модель и effort идут флагами запуска: только имя, без пробелов и без ведущего «-».
-_AGENT_OPTION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:\[\]-]{0,79}$")
+_SAFE_FLAG_VALUE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:\[\]-]{0,79}$")
 
 
 def run_agent(
@@ -135,12 +115,6 @@ def run_agent(
     confirmed: bool,
     session_note: Path | None = None,
 ) -> Path:
-    """«Запустить» или «Перезапустить Агента»: Заметка встаёт в очередь со Скиллом и папкой своего
-    вида, но с моделью и effort, выбранными на этот запуск. Если Выжимка в Заметке уже есть, она
-    будет написана заново — без подтверждения пользователя (`confirmed`) запуск отклоняется.
-
-    Отклоняется и для Заметки идущей Сессии, и пока Заметка уже ждёт Агента или он с ней работает.
-    Возвращает путь Заметки."""
     path, kind = find_note(settings, raw_note)
     if session_note is not None and path == session_note:
         raise NoteRefused("Сессия с этой Заметкой ещё идёт")
@@ -148,9 +122,9 @@ def run_agent(
     if current is not None and current.state in (SummaryState.QUEUED, SummaryState.RUNNING):
         raise NoteRefused(f"Агент для этой Заметки уже {current.state.label}")
     model, effort = model.strip(), effort.strip()
-    if not _AGENT_OPTION.match(model):
+    if not _SAFE_FLAG_VALUE.match(model):
         raise NoteRefused(f"Недопустимая модель: {model or 'не выбрана'}")
-    if not _AGENT_OPTION.match(effort):
+    if not _SAFE_FLAG_VALUE.match(effort):
         raise NoteRefused(f"Недопустимый effort: {effort or 'не выбран'}")
     if _summary(Note(path)) and not confirmed:
         raise NoteRefused(f"{REWRITE_WARNING}. Подтвердите перезапуск")
@@ -169,8 +143,6 @@ MODELS = ("opus", "sonnet", "haiku")
 
 @dataclass(frozen=True)
 class AgentChoice:
-    """Выбор модели и effort на один запуск Агента; по умолчанию — из настроек вида."""
-
     models: tuple[str, ...]
     efforts: tuple[str, ...]
     model: str
@@ -178,7 +150,6 @@ class AgentChoice:
 
 
 def agent_choices(settings: Settings) -> dict[str, AgentChoice]:
-    """Варианты для формы запуска по видам; значение из настроек всегда среди вариантов."""
     choices = {}
     for kind in SessionKind:
         kind_settings = settings.for_kind(kind)
@@ -196,7 +167,6 @@ def _with(options: tuple[str, ...], value: str) -> tuple[str, ...]:
 
 
 def list_notes(settings: Settings, agent: AgentQueue, session_note: Path | None = None) -> list[NoteEntry]:
-    """Сессии обеих папок видов от новых к старым. `session_note` — Заметка идущей Сессии."""
     entries: list[NoteEntry] = []
     seen: set[Path] = set()
     for kind in SessionKind:
@@ -218,7 +188,6 @@ def list_notes(settings: Settings, agent: AgentQueue, session_note: Path | None 
 
 
 def describe(path: Path, folder_kind: SessionKind, agent: AgentQueue, session_note: Path | None = None) -> NoteEntry | None:
-    """Строка списка для Заметки; `None`, если файла уже нет."""
     name = parse_name(path.stem)
     if name is None:
         return None
@@ -259,7 +228,6 @@ def _summary(note: Note) -> str:
 
 
 def _kind(tags: str, folder_kind: SessionKind) -> SessionKind:
-    """Вид — по тегу, который пишет приложение; без него — по папке."""
     for kind in SessionKind:
         if re.search(rf"(?<!\w){kind.tag}(?!\w)", tags):
             return kind
@@ -267,7 +235,6 @@ def _kind(tags: str, folder_kind: SessionKind) -> SessionKind:
 
 
 def _duration(start: str, end: str) -> str:
-    """Длительность по свойствам `start` и `end`; через полночь — тоже. Пусто, если конца нет."""
     start_match, end_match = _TIME.match(start), _TIME.match(end)
     if start_match is None or end_match is None:
         return ""

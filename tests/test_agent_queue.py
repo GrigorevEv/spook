@@ -1,18 +1,15 @@
-"""Очередь Агента на заглушке: после «Стоп» Заметка уходит Агенту, состояние Выжимки видно на странице."""
-
 from __future__ import annotations
 
 import html
 import logging
 import re
 
-from conftest import speech
+from conftest import NO_SPEECH, speech
 
 NOTE_NAME = "2026-11-06 14-02 Лекция"
 
 
 def lecture_with_utterance(spook, *texts: str) -> None:
-    """Лекция с Репликами: «Старт», речь по сценарию, конец очереди распознавания."""
     spook.recognizer.say(*texts)
     spook.start_lecture()
     with spook.events() as events:
@@ -31,7 +28,7 @@ def test_after_stop_agent_runs_once_with_skill_note_model_and_effort_in_wiki_roo
 
     note_path = spook.lectures_dir / f"{NOTE_NAME}.md"
     [call] = spook.agent.calls()
-    assert call["argv"][: call["argv"].index("--disallowedTools")] == [  # запреты — `test_agent_launch.py`
+    assert call["argv"][: call["argv"].index("--disallowedTools")] == [
         "-p", f"/spook-lecture {note_path}",
         "--model", "sonnet",
         "--effort", "medium",
@@ -197,7 +194,6 @@ def test_notification_reports_agent_error_with_message(spook):
 
 
 def test_service_journal_records_agent_start_and_outcome(spook, caplog):
-    # Приёмка (задача 30): в журнале службы о работе Агента не было ни строки.
     caplog.set_level(logging.INFO, logger="spook")
     spook.write_settings(lecture={"model": "sonnet", "effort": "medium"})
     spook.agent.play("fail")
@@ -229,7 +225,7 @@ def test_unsent_notification_is_recorded_in_service_journal(spook, caplog):
 
 
 def test_session_without_utterances_does_not_run_agent_and_leaves_no_empty_note(spook):
-    spook.recognizer.say("")
+    spook.recognizer.say(NO_SPEECH)
     spook.start_lecture()
     assert (spook.lectures_dir / f"{NOTE_NAME}.md").exists()
 
@@ -247,7 +243,7 @@ def test_session_without_utterances_does_not_run_agent_and_leaves_no_empty_note(
 def test_agent_queue_survives_service_restart_interrupted_run_is_error_and_waiting_note_runs(spook):
     first = spook.lectures_dir / f"{NOTE_NAME}.md"
     second = spook.lectures_dir / "2026-11-06 15-02 Лекция.md"
-    spook.agent.play("spoil-and-hang")  # Агент пишет Выжимку, портит Транскрипт и работает дальше
+    spook.agent.play("spoil-and-hang")
     lecture_with_utterance(spook, "Первая лекция.")
     with spook.events() as events:
         spook.stop()
@@ -268,7 +264,6 @@ def test_agent_queue_survives_service_restart_interrupted_run_is_error_and_waiti
         ["Выжимка готова", second.stem],
     ]
     assert [call["argv"][1] for call in spook.agent.calls()] == [f"/spook-lecture {first}", f"/spook-lecture {second}"]
-    # Транскрипт прерванного запуска сверен по снимку, сделанному до запуска; Выжимка осталась.
     assert first.read_text(encoding="utf-8") == (
         "---\n"
         "date: 2026-11-06\n"
@@ -305,7 +300,7 @@ def test_meeting_and_lecture_with_same_name_keep_separate_journals(spook):
         events.wait_for("agent", containing="ошибка")
     spook.agent.play("summary")
     spook.recognizer.say("Встреча.")
-    spook.start_meeting(topic="Планёрка")  # та же минута, та же Тема — то же имя в другой папке
+    spook.start_meeting(topic="Планёрка")
     with spook.events() as events:
         spook.audio.feed(speech(20))
         events.wait_for("paragraph", containing="Встреча.")

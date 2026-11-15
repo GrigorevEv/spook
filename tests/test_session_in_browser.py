@@ -1,8 +1,3 @@
-"""Сквозные сценарии в настоящем браузере: страница «Сессия» на службе с подменами.
-
-Элементы выбираются по роли и тексту, а не по классам оформления.
-"""
-
 from __future__ import annotations
 
 import re
@@ -13,7 +8,7 @@ from playwright.sync_api import Page, expect
 
 from spook.audio import Source
 
-from conftest import speech
+from conftest import NO_SPEECH, speech
 
 pytestmark = pytest.mark.browser
 
@@ -54,14 +49,13 @@ def test_lecture_from_start_to_stop_on_demo_launch(demo, page, screenshot):
 
 def test_meeting_from_start_through_pause_to_summary_and_opening_note_in_obsidian(spook, page, screenshot):
     spook.agent.play("summary")
-    spook.recognizer.say("Коллеги, всем привет.", "Привет, начинаем.")  # Системный звук и Микрофон до Паузы, по 20 с
-    spook.recognizer.say("Хорошо, продолжаем.")  # Системный звук после Паузы
+    spook.recognizer.say("Коллеги, всем привет.", "Привет, начинаем.")
+    spook.recognizer.say("Хорошо, продолжаем.")
     page.goto(spook.base_url)
 
-    # Переключатели видов скрыты оформлением, пользователь нажимает на подпись.
     page.get_by_role("group", name="Вид Сессии").get_by_text("Встреча").click()
     expect(page.get_by_role("radio", name="Встреча")).to_be_checked()
-    expect(page.get_by_role("textbox", name="Ссылка")).to_be_hidden()  # Ссылка нужна только Лекции
+    expect(page.get_by_role("textbox", name="Ссылка")).to_be_hidden()
     page.get_by_role("textbox", name="Тема").fill("Планёрка")
     page.get_by_role("button", name="Старт").click()
 
@@ -101,20 +95,19 @@ def test_meeting_from_start_through_pause_to_summary_and_opening_note_in_obsidia
     note = spook.meetings_dir / "2026-11-06 14-02 Планёрка.md"
     [[uri]] = [call["argv"] for call in spook.opener.calls()]
     assert uri.startswith("obsidian://open?path=%2F") and unquote(uri.removeprefix("obsidian://open?path=")) == str(note)
-    assert "Про тесты." in note.read_text(encoding="utf-8")  # Выжимка заглушки Агента
+    assert "Про тесты." in note.read_text(encoding="utf-8")
 
 
 def test_closing_all_tabs_keeps_session_and_new_tab_shows_everything(spook, context, screenshot):
-    # Между Репликами по 20 секунд тишины, чтобы каждая стала отдельным абзацем.
-    spook.recognizer.say("При открытой вкладке.", "", "Пока вкладок не было.", "", "После новой вкладки.")
+    spook.recognizer.say("При открытой вкладке.", NO_SPEECH, "Пока вкладок не было.", NO_SPEECH, "После новой вкладки.")
     tab = context.new_page()
     tab.goto(spook.base_url)
     tab.get_by_role("button", name="Старт").click()
-    expect(status_of(tab)).to_contain_text("идёт")  # щелчок не ждёт ответа: без захвата звук пропал бы
+    expect(status_of(tab)).to_contain_text("идёт")
     spook.audio.feed(speech(20))
     expect(live_text_of(tab)).to_contain_text("При открытой вкладке.")
 
-    tab.close()  # все вкладки закрыты — захват и распознавание идут дальше
+    tab.close()
     spook.audio.feed(speech(40))
     spook.wait_until(lambda: "Пока вкладок не было." in spook.page().text)
     spook.clock.advance(65)
@@ -137,15 +130,15 @@ def test_closing_all_tabs_keeps_session_and_new_tab_shows_everything(spook, cont
 
 
 def test_page_reconnects_by_itself_after_event_stream_breaks(spook, page, screenshot):
-    spook.recognizer.say("До обрыва.", "", "Во время обрыва.", "", "После восстановления.")
+    spook.recognizer.say("До обрыва.", NO_SPEECH, "Во время обрыва.", NO_SPEECH, "После восстановления.")
     page.goto(spook.base_url)
     page.get_by_role("button", name="Старт").click()
-    expect(status_of(page)).to_contain_text("идёт")  # щелчок не ждёт ответа: без захвата звук пропал бы
+    expect(status_of(page)).to_contain_text("идёт")
     spook.audio.feed(speech(20))
     expect(live_text_of(page)).to_contain_text("До обрыва.")
     page.evaluate("() => { window.reopened = 0; document.addEventListener('htmx:sseOpen', () => window.reopened++); }")
 
-    spook.restart()  # служба перезапущена: поток событий оборван, Сессия продолжается
+    spook.restart_server()
     spook.audio.feed(speech(40))
     spook.wait_until(lambda: "Во время обрыва." in spook.page().text)
     spook.clock.advance(80)
@@ -153,7 +146,7 @@ def test_page_reconnects_by_itself_after_event_stream_breaks(spook, page, screen
     page.wait_for_function("() => window.reopened > 0")
     expect(live_text_of(page)).to_contain_text("Во время обрыва.")
     expect(status_of(page)).to_contain_text("идёт")
-    expect(status_of(page).get_by_role("time")).to_have_text(re.compile(r"^0:01:2\d$"))  # таймер взят с сервера
+    expect(status_of(page).get_by_role("time")).to_have_text(re.compile(r"^0:01:2\d$"))
     spook.audio.feed(speech(40))
     expect(live_text_of(page)).to_contain_text("После восстановления.")
     text = live_text_of(page).inner_text()

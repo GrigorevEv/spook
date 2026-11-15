@@ -1,11 +1,3 @@
-"""Обвязка тестов главного шва: служба поднимается в процессе, тест действует как браузер.
-
-Подмены внешнего мира: вход звука (образцы вместо PipeWire), детектор речи по громкости, сценарный распознаватель,
-скрипты-заглушки вместо внешних программ (Claude Code, уведомления, средство открытия, инструмент
-Вики), управляемые часы.
-Настройки — временный TOML-файл; папки Хранилищ и каталог состояния — временные каталоги.
-"""
-
 from __future__ import annotations
 
 import json
@@ -33,9 +25,10 @@ from spook.serve import make_server
 from spook.settings import Settings, load_settings
 from spook.web import create_app
 
-pytest_plugins = ("chrome",)  # фикстуры браузерных тестов: `browser`, `context`, `page`, `screenshot`
+pytest_plugins = ("chrome",)
 
 SAMPLE_RATE = 16_000
+NO_SPEECH = ""
 SESSION_START = datetime(2026, 11, 6, 14, 2, tzinfo=timezone(timedelta(hours=3)))
 STUBS_DIR = Path(__file__).parent / "stubs"
 
@@ -62,12 +55,10 @@ MEETING_NOTE_AFTER_START = (
 
 
 def note_text(spook: "Service") -> str:
-    """Текст Заметки Лекции, начатой в `SESSION_START`."""
     return (spook.lectures_dir / "2026-11-06 14-02 Лекция.md").read_text(encoding="utf-8")
 
 
 def meeting_note_text(spook: "Service") -> str:
-    """Текст Заметки Встречи, начатой в `SESSION_START`."""
     return (spook.meetings_dir / "2026-11-06 14-02 Встреча.md").read_text(encoding="utf-8")
 
 
@@ -78,7 +69,6 @@ def free_port() -> int:
 
 
 def speech(seconds: float) -> np.ndarray:
-    """Отрезок «речи» для подменённого входа: шум, по длине равный заданным секундам."""
     rng = np.random.default_rng(seed=int(seconds * 1000))
     return rng.uniform(-0.3, 0.3, int(seconds * SAMPLE_RATE)).astype(np.float32)
 
@@ -90,8 +80,6 @@ class SseEvent:
 
 
 class EventStream:
-    """Чтение потока событий так, как его читает браузер."""
-
     def __init__(self, client: httpx.Client, url: str, timeout: float) -> None:
         self._stream = client.stream("GET", url, timeout=timeout)
         self._timeout = timeout
@@ -126,13 +114,9 @@ class EventStream:
         raise AssertionError("поток событий закончился")
 
     def wait_for(self, name: str, containing: str = "") -> SseEvent:
-        """Следующее событие с данным именем, содержащее текст; остальные пропускаются.
-
-        Срок ожидания общий, а не на каждое событие: иначе непрерывные `levels` настоящего входа
-        ждали бы вечно."""
-        deadline = time.monotonic() + 4 * self._timeout
+        overall_deadline = time.monotonic() + 4 * self._timeout
         while True:
-            assert time.monotonic() < deadline, f"событие {name} «{containing}» не пришло"
+            assert time.monotonic() < overall_deadline, f"событие {name} «{containing}» не пришло"
             event = self.next_event()
             if event.name == name and containing in event.data:
                 return event
@@ -140,12 +124,6 @@ class EventStream:
 
 @dataclass
 class StubProgram:
-    """Скрипт-заглушка внешней программы: запоминает вызовы и играет сценарий.
-
-    Сама заглушка — `tests/stubs/<name>_stub.py`; служба вызывает тонкий сценарий `path`,
-    в котором зашит каталог управления `control` — там вызовы, сценарий и файл отпускания.
-    """
-
     name: str
     control: Path
     path: Path
@@ -162,50 +140,40 @@ class StubProgram:
         return cls(name, control, path)
 
     def calls(self) -> list[dict]:
-        """Вызовы по порядку: `argv` (без имени программы) и `cwd`."""
         record = self.control / f"{self.name}-calls.jsonl"
         if not record.exists():
             return []
         return [json.loads(line) for line in record.read_text(encoding="utf-8").splitlines() if line]
 
     def play(self, scenario: str) -> None:
-        """Сценарий следующих вызовов; какие бывают — в шапке `tests/stubs/<name>_stub.py`."""
         (self.control / f"{self.name}-scenario").write_text(scenario, encoding="utf-8")
 
     def release(self) -> None:
-        """Отпускает заглушку, ждущую по сценарию `wait`."""
         (self.control / f"{self.name}-release").touch()
 
 
 @dataclass
 class Service:
-    """Служба, поднятая на подменах; доступ — только по HTTP и через файлы."""
-
     base_url: str
     settings: Settings
     settings_path: Path
     lectures_dir: Path
     meetings_dir: Path
     state_dir: Path
-    audio: AudioInput  # в обычных тестах — FakeAudioInput с `feed`
-    recognizer: Recognizer  # в обычных тестах — ScriptedRecognizer с `say` и `heard`
+    claude_config_dir: Path
+    audio: AudioInput
+    recognizer: Recognizer
     clock: ManualClock
     agent: StubProgram
     notify: StubProgram
-    opener: StubProgram  # средство открытия (`xdg-open`)
-    wiki: StubProgram  # инструмент Вики (`wiki_html.py`)
+    opener: StubProgram
+    wiki: StubProgram
     http: httpx.Client = field(repr=False)
-    restart: Callable[[], None] = field(repr=False)
-    """Перезапуск сервера на том же порту: потоки событий обрываются, Сессия в службе остаётся."""
+    restart_server: Callable[[], None] = field(repr=False)
     restart_service: Callable[[float], None] = field(repr=False)
-    """Перерыв в работе службы: служба обрывается без уборки (как при сбое или выключении) и через
-    столько секунд по часам поднимается заново — новая служба над тем же каталогом состояния, теми же
-    Хранилищами и настройками, на том же порту. Часы, вход звука и распознаватель у новой службы свои
-    (`clock`, `audio`, `recognizer` заменяются: тексты для неё задаются после перезапуска), заглушки — прежние."""
 
     @property
     def wiki_dir(self) -> Path:
-        """Корень Вики: в тестах — папка над папкой Лекций, как `~/learn/wiki` над `lectures`."""
         return self.lectures_dir.parent
 
     @property
@@ -218,7 +186,6 @@ class Service:
         }
 
     def write_settings(self, lectures_dir: Path | None = None, **overrides) -> None:
-        """Переписывает файл настроек, сохраняя порт, папку Встреч и пути заглушек; остальное — как у `write_settings`."""
         overrides.setdefault("meetings_dir", self.meetings_dir)
         overrides.setdefault("terms_dictionary", self.settings.terms_dictionary)
         write_settings(
@@ -233,13 +200,11 @@ class Service:
         return self.http.get(f"{self.base_url}/")
 
     def start_lecture(self, topic: str = "", link: str = "") -> httpx.Response:
-        """«Старт» Лекции; поля Темы и Ссылки страница отправляет всегда, пусть и пустыми."""
         return self.http.post(
             f"{self.base_url}/session/start", data={"kind": "lecture", "topic": topic, "link": link}
         )
 
     def start_meeting(self, topic: str = "") -> httpx.Response:
-        """«Старт» Встречи; поле Темы страница отправляет всегда, пусть и пустым."""
         return self.http.post(f"{self.base_url}/session/start", data={"kind": "meeting", "topic": topic})
 
     def set_topic(self, topic: str) -> httpx.Response:
@@ -281,11 +246,6 @@ def write_settings(
     terms_dictionary: Path | None = None,
     agent: dict[str, object] | None = None,
 ) -> None:
-    """Пишет файл настроек: порт, папку Лекций (корень Вики — папка над ней), необязательные длину
-    Реплики и другие ключи `[recognition]`, время автостопа, ключи `[lecture]`, пути `[programs]`,
-    ключи `[agent]`, папку Встреч и путь к Словарю терминов. Без `meetings_dir` папка Встреч остаётся
-    умолчанием — такие тесты Встречу не начинают; без `terms_dictionary` — тоже: Агент Встречи создал
-    бы заготовку Словаря у пользователя."""
     path.parent.mkdir(parents=True, exist_ok=True)
     lecture_lines = "".join(f'{key} = "{value}"\n' for key, value in (lecture or {}).items())
     recognition_keys = dict(recognition or {})
@@ -320,20 +280,16 @@ def write_settings(
 
 @pytest.fixture
 def audio_input() -> AudioInput:
-    """Вход звука службы; модуль тестов может подменить его своей фикстурой (например, настоящим входом)."""
     return FakeAudioInput()
 
 
 @pytest.fixture
 def speech_detector() -> SpeechDetectorFactory:
-    """Детектор речи службы: по громкости, без модели; модуль тестов может подменить его настоящим."""
     return LoudnessSpeechDetector
 
 
 @pytest.fixture
 def recognizer() -> Recognizer:
-    """Распознаватель службы — сценарный; модуль тестов может подменить его своей фикстурой
-    (например, настоящим GigaAM в медленных тестах)."""
     return ScriptedRecognizer()
 
 
@@ -349,12 +305,9 @@ def spook(
     lectures_dir = tmp_path / "wiki" / "lectures"
     meetings_dir = tmp_path / "notes" / "работа"
     state_dir = tmp_path / "state" / "spook"
-    # Настройки лежат, как у пользователя, в `$XDG_CONFIG_HOME/spook/`: так команда `spook topic`,
-    # вызванная заглушкой Агента (ей достаётся окружение службы), находит порт службы теста.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    # Пользовательские Скиллы Claude Code (`~/.claude/skills`) служба читает, чтобы проверить их шапку;
-    # в тестах каталог Claude Code — временный, настоящие Скиллы пользователя не участвуют.
-    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
+    claude_config_dir = tmp_path / "claude-config"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_config_dir))
     agent = StubProgram.create(tmp_path / "stubs", "claude")
     notify = StubProgram.create(tmp_path / "stubs", "notify")
     opener = StubProgram.create(tmp_path / "stubs", "open")
@@ -371,9 +324,6 @@ def spook(
     settings = load_settings(settings_path)
 
     def load_stubbed_settings() -> Settings:
-        """Настройки теста; внешние программы — только заглушки из временного каталога, иначе тест
-        запустил бы настоящий Claude Code или открыл окно пользователю (переписывайте настройки
-        через `spook.write_settings`)."""
         loaded = load_settings(settings_path)
         programs = loaded.programs
         for program in (programs.claude, programs.notify, programs.open, programs.wiki):
@@ -413,14 +363,12 @@ def spook(
 
     running = start_server()
 
-    def restart() -> None:
+    def restart_server() -> None:
         nonlocal running
         stop_server(*running)
         running = start_server()
 
     def restart_service(after_seconds: float) -> None:
-        # Прежняя служба остаётся в памяти без дела: её часы больше не идут, вход звука и распознаватель
-        # отключены (распознавание, ждущее у ворот прежнего распознавателя, так и не закончится).
         nonlocal running, app
         stop_server(*running)
         service.clock = ManualClock(service.clock.now() + timedelta(seconds=after_seconds))
@@ -437,6 +385,7 @@ def spook(
             lectures_dir=lectures_dir,
             meetings_dir=meetings_dir,
             state_dir=state_dir,
+            claude_config_dir=claude_config_dir,
             audio=audio,
             recognizer=recognizer,
             clock=clock,
@@ -445,7 +394,7 @@ def spook(
             opener=opener,
             wiki=wiki,
             http=http,
-            restart=restart,
+            restart_server=restart_server,
             restart_service=restart_service,
         )
         yield service
@@ -455,8 +404,6 @@ def spook(
 
 @dataclass
 class Demo:
-    """Показ `spook demo`, запущенный отдельным процессом; доступ — только по HTTP."""
-
     base_url: str
     process: subprocess.Popen = field(repr=False)
     http: httpx.Client = field(repr=False)
@@ -465,7 +412,6 @@ class Demo:
         return EventStream(self.http, f"{self.base_url}/events", timeout)
 
     def terminate(self) -> int:
-        """Останавливает показ так же, как это делает systemd или Ctrl+C, и возвращает код выхода."""
         if self.process.poll() is None:
             self.process.terminate()
         return self.process.wait(timeout=10)

@@ -1,14 +1,3 @@
-"""Настоящий захват из PipeWire на виртуальных устройствах, созданных на время теста.
-
-Запуск: `uv run pytest -q -m pipewire`. Устройства пользователя по умолчанию не меняются; звук
-проигрывается только в виртуальное устройство (`pw-play` с `node.dont-reconnect=true` при пропаже цели
-завершается ошибкой, а не переключается на наушники пользователя); виртуальные узлы удаляются после теста.
-
-Пропажа устройства проверяется удалением виртуального устройства, закреплённого в настройках, во время
-захвата. Смена устройства по умолчанию здесь не проверяется: для этого пришлось бы менять умолчания
-пользователя — этот сценарий покрыт только на подменах (`test_devices.py`, `test_pipewire_following.py`).
-"""
-
 from __future__ import annotations
 
 import json
@@ -35,21 +24,17 @@ from test_settings_screen import settings_form
 pytestmark = pytest.mark.pipewire
 
 SAMPLE_RATE = 16_000
-TONE_AMPLITUDE = 0.1  # −20 дБ полной шкалы: RMS синуса = 0.1/√2 ≈ 0.0707, пик = 0.1
+TONE_AMPLITUDE = 0.1
 TONE_RMS = TONE_AMPLITUDE / np.sqrt(2)
 OUTPUT_DESCRIPTION = "Spook test output"
 MICROPHONE_DESCRIPTION = "Spook test microphone"
-
-
-# --- обвязка PipeWire -------------------------------------------------------------
 
 
 def pw_dump() -> list[dict[str, Any]]:
     return json.loads(subprocess.run(["pw-dump"], capture_output=True, check=True, timeout=10).stdout)
 
 
-def nodes() -> dict[str, int]:
-    """`node.name` → id всех узлов."""
+def node_ids_by_name() -> dict[str, int]:
     return {
         obj["info"]["props"]["node.name"]: obj["id"]
         for obj in pw_dump()
@@ -58,7 +43,6 @@ def nodes() -> dict[str, int]:
 
 
 def user_defaults() -> dict[str, Any]:
-    """Устройства по умолчанию глазами независимой программы `pw-metadata`."""
     return {
         key: subprocess.run(["pw-metadata", "0", key], capture_output=True, text=True, check=True).stdout.strip()
         for key in ("default.audio.sink", "default.audio.source", "default.configured.audio.sink", "default.configured.audio.source")
@@ -74,7 +58,6 @@ def wait_until(condition: Callable[[], bool], timeout: float = 5.0, what: str = 
 
 @contextmanager
 def virtual_node(media_class: str, description: str) -> Iterator[str]:
-    """Виртуальное устройство на время теста; `priority.session=0` — чтобы не стать умолчанием."""
     name = f"spook-test-{uuid.uuid4().hex[:8]}"
     properties = (
         f"{{ factory.name=support.null-audio-sink node.name={name} node.description=\"{description}\" "
@@ -83,13 +66,13 @@ def virtual_node(media_class: str, description: str) -> Iterator[str]:
     )
     subprocess.run(["pw-cli", "create-node", "adapter", properties], check=True, capture_output=True, timeout=10)
     try:
-        wait_until(lambda: name in nodes(), what="появление виртуального устройства")
+        wait_until(lambda: name in node_ids_by_name(), what="появление виртуального устройства")
         yield name
     finally:
-        node_id = nodes().get(name)
+        node_id = node_ids_by_name().get(name)
         if node_id is not None:
             subprocess.run(["pw-cli", "destroy", str(node_id)], check=True, capture_output=True, timeout=10)
-        wait_until(lambda: name not in nodes(), what="удаление виртуального устройства")
+        wait_until(lambda: name not in node_ids_by_name(), what="удаление виртуального устройства")
 
 
 @pytest.fixture
@@ -109,7 +92,7 @@ def user_devices_untouched() -> Iterator[None]:
     before = user_defaults()
     yield
     assert user_defaults() == before, "изменились устройства пользователя по умолчанию"
-    assert not [name for name in nodes() if name.startswith("spook-test-")], "остались виртуальные узлы теста"
+    assert not [name for name in node_ids_by_name() if name.startswith("spook-test-")], "остались виртуальные узлы теста"
 
 
 def tone(seconds: float) -> bytes:
@@ -118,11 +101,6 @@ def tone(seconds: float) -> bytes:
 
 
 def play_tone(target: str, seconds: float, into_ports: tuple[str, ...] = ()) -> subprocess.Popen:
-    """Проигрывает синус только в узел `target` (по stdin, без файлов).
-
-    Без `into_ports` цель задаётся `--target`; виртуальный источник целью воспроизведения быть не может,
-    поэтому для него поток создаётся несвязанным и линкуется в его входы вручную.
-    """
     player_name = f"spook-test-player-{uuid.uuid4().hex[:8]}"
     if into_ports:
         properties = f"{{ node.name={player_name} node.autoconnect=false node.dont-reconnect=true }}"
@@ -136,7 +114,7 @@ def play_tone(target: str, seconds: float, into_ports: tuple[str, ...] = ()) -> 
         stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     if into_ports:
-        wait_until(lambda: player_name in nodes(), what="появление потока воспроизведения")
+        wait_until(lambda: player_name in node_ids_by_name(), what="появление потока воспроизведения")
         for port in into_ports:
             subprocess.run(["pw-link", f"{player_name}:output_MONO", f"{target}:{port}"], check=True, timeout=10)
 
@@ -152,12 +130,7 @@ def play_tone(target: str, seconds: float, into_ports: tuple[str, ...] = ()) -> 
     return player
 
 
-# --- слежение за диском и журналом ----------------------------------------------------
-
-
 class DiskWatch:
-    """Снимок временных каталогов: за время захвата на диске не должно появиться ни одного файла."""
-
     def __init__(self, *roots: Path) -> None:
         self._roots = roots
         self._before = self._snapshot()
@@ -174,7 +147,6 @@ class DiskWatch:
 
 
 def capture_processes(target: str) -> list[int]:
-    """Процессы захвата, нацеленные на наше виртуальное устройство."""
     found = []
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
@@ -189,7 +161,6 @@ def capture_processes(target: str) -> list[int]:
 
 
 def files_open_for_writing(pid: int) -> list[str]:
-    """Обычные файлы, открытые процессом на запись (каналы, сокеты, память и /dev не считаются)."""
     writable = []
     for fd in (Path("/proc") / str(pid) / "fd").iterdir():
         try:
@@ -203,12 +174,8 @@ def files_open_for_writing(pid: int) -> list[str]:
     return writable
 
 
-# --- тесты -------------------------------------------------------------------------------
-
-
 @pytest.fixture
 def audio_input(virtual_sink: str) -> PipeWireAudioInput:
-    """Настоящий вход, у которого Системный звук закреплён за виртуальным устройством вывода."""
     return PipeWireAudioInput(targets={Source.SYSTEM: virtual_sink})
 
 
@@ -250,7 +217,7 @@ def test_lecture_on_real_input_shows_output_device_and_streams_its_levels(spook,
     assert disk.new_files() == set()
     journal = [record.getMessage() for record in caplog.records if record.name.startswith("spook")]
     assert journal, "служба ничего не записала в журнал о захвате"
-    looks_like_audio = re.compile(r"b'|b\"|\[\s*-?\d")  # байты или массив отсчётов, пусть и сокращённый numpy
+    looks_like_audio = re.compile(r"b'|b\"|\[\s*-?\d")
     assert not [message for message in journal if looks_like_audio.search(message)], "в журнал попал звук"
 
 

@@ -1,21 +1,3 @@
-"""Настоящий вход звука из PipeWire за тем же протоколом, что и подмена.
-
-Системный звук — монитор устройства вывода по умолчанию (`stream.capture.sink=true`), Микрофон —
-устройство ввода по умолчанию; закреплённое устройство (`node.name`) берётся вместо умолчания.
-Устройства и умолчания читаются из `pw-dump`; звук читается из stdout `pw-record` сырым PCM (s16,
-моно, 16 кГц) порциями по 100 мс и отдаётся получателю — на диск ничего не пишется, в журнал звук
-не попадает (ADR-0001). Поток захвата всегда получает `node.dont-reconnect=true`: WirePlumber 0.4
-иначе молча перелинковывает его на другое устройство.
-
-За устройством захват следит сам:
-- смена умолчания — по строкам `pw-metadata -m 0` с ключом `default.audio.sink`/`default.audio.source`;
-  незакреплённый захват перезапускает `pw-record` на новом устройстве;
-- пропажа устройства — `pw-record` завершается сам («target not found»); захват по `pw-dump` находит
-  устройство по умолчанию и продолжает с него. Пропавшее закреплённое устройство до конца захвата
-  заменяется умолчанием: вернуться к нему молча, без ведома пользователя, захват не может.
-О каждом переходе сообщается получателю событий устройств.
-"""
-
 from __future__ import annotations
 
 import json
@@ -37,24 +19,21 @@ DEFAULT_KEY = {Source.SYSTEM: "default.audio.sink", Source.MIC: "default.audio.s
 MEDIA_CLASS = {Source.SYSTEM: ("Audio/Sink",), Source.MIC: ("Audio/Source", "Audio/Source/Virtual")}
 MISSING_DEFAULT = {Source.SYSTEM: "нет устройства вывода по умолчанию", Source.MIC: "нет устройства ввода по умолчанию"}
 
+_S16_MONO_FRAME_BYTES = 2
 CHUNK_SECONDS = 0.1
-CHUNK_BYTES = int(SAMPLE_RATE * CHUNK_SECONDS) * 2  # s16 моно
-START_TIMEOUT = 3.0  # ждём первой порции или быстрого отказа pw-record
+CHUNK_BYTES = int(SAMPLE_RATE * CHUNK_SECONDS) * _S16_MONO_FRAME_BYTES
+FAST_FAILURE_WINDOW = 3.0
 STOP_TIMEOUT = 3.0
-RETRY_SECONDS = 0.25  # шаг ожидания устройства после пропажи
-DEFAULT_SETTLE_SECONDS = 2.0  # сколько ждать, пока WirePlumber назначит новое умолчание, прежде чем сказать «устройства нет»
+RETRY_SECONDS = 0.25
+DEFAULT_SETTLE_SECONDS = 2.0
 
-# Строка `pw-metadata -m 0`: update: id:0 key:'default.audio.sink' value:'{"name":"…"}' type:'Spa:String:JSON'
 _METADATA_UPDATE = re.compile(r"^update: id:0 key:'(?P<key>[^']*)' value:'(?P<value>.*)' type:'[^']*'$")
+
+_CAPTURE_SINK_MONITOR = "stream.capture.sink=true"
+_FORBID_WIREPLUMBER_RELINK = "node.dont-reconnect=true"
 
 
 class PipeWireAudioInput:
-    """Вход звука из PipeWire.
-
-    Закреплённое устройство Источника (`node.name`) приходит в `start` из настроек; `targets` — то же
-    закрепление на весь вход, для проверок на виртуальных устройствах. Пустое — устройство по умолчанию.
-    """
-
     def __init__(self, targets: Mapping[Source, str] | None = None) -> None:
         self._targets = {source: name for source, name in (targets or {}).items() if name}
 
@@ -67,12 +46,9 @@ class PipeWireAudioInput:
         return capture
 
     def devices(self, source: Source) -> list[Device]:
-        """Устройства Источника из `pw-dump` по названию: для Системного звука — устройства вывода
-        (захватывается их монитор), для Микрофона — устройства ввода. `Device.name` — `node.name`."""
         return sorted(_devices(pw_dump(), source).values(), key=lambda device: (device.description, device.name))
 
     def device(self, source: Source, pinned: str = "") -> Device:
-        """Устройство Источника — закреплённое или по умолчанию; без него захват начать нельзя."""
         objects = pw_dump()
         devices = _devices(objects, source)
         target = pinned or self._targets.get(source)
@@ -89,12 +65,9 @@ class PipeWireAudioInput:
 
 
 def record_command(source: Source, device: Device) -> list[str]:
-    """`pw-record` с сырым PCM в stdout. Цель задаётся явно по `node.name` — так поток не зависит от того,
-    что WirePlumber считает умолчанием в момент старта; `stream.capture.sink=true` берёт монитор устройства
-    вывода. `node.dont-reconnect=true`: при пропаже устройства процесс завершается, а не уходит на другое."""
-    properties = [f"node.name=spook-{source.value}", "node.dont-reconnect=true"]
+    properties = [f"node.name=spook-{source.value}", _FORBID_WIREPLUMBER_RELINK]
     if source is Source.SYSTEM:
-        properties.insert(0, "stream.capture.sink=true")
+        properties.insert(0, _CAPTURE_SINK_MONITOR)
     return [
         "pw-record",
         "--target", device.name,
@@ -107,20 +80,17 @@ def record_command(source: Source, device: Device) -> list[str]:
 
 
 class PipeWireCapture:
-    """Идущий захват одного Источника: один процесс `pw-record` за раз, переход на другое устройство
-    при смене умолчания или пропаже устройства, сообщение о переходе получателю событий устройств."""
-
     def __init__(
         self, source: Source, device: Device, pinned: str, sink: AudioSink, on_device_change: DeviceSink
     ) -> None:
         self._source = source
-        self._device = device  # устройство текущего или последнего процесса захвата
+        self._device = device
         self._pinned = pinned
         self._sink = sink
         self._on_device_change = on_device_change
         self._lock = threading.RLock()
         self._stopping = threading.Event()
-        self._recorder: _Recorder | None = None  # None — идёт переход на другое устройство
+        self._recorder: _Recorder | None = None
         self._watcher: subprocess.Popen | None = None
 
     @property
@@ -128,13 +98,11 @@ class PipeWireCapture:
         return self._device.description
 
     def begin(self) -> None:
-        """Начинает захват; если `pw-record` не дал звука, а завершился, — `CaptureUnavailable`."""
         recorder = _Recorder(self._source, self._device, self._sink, self._on_recorder_end)
         recorder.wait_until_streaming()
         with self._lock:
             self._recorder = recorder
-        if recorder.finished:  # завершился сразу после первой порции — до того, как стал текущим
-            self._on_recorder_end(recorder)
+        self._replay_end_missed_while_starting(recorder)
         self._watch_defaults()
 
     def stop(self) -> None:
@@ -152,10 +120,7 @@ class PipeWireCapture:
         if recorder is not None:
             recorder.stop()
 
-    # --- внутреннее ---------------------------------------------------------------
-
     def _watch_defaults(self) -> None:
-        """Следит за умолчаниями через `pw-metadata -m 0`; без него захват просто не следует за сменой."""
         try:
             watcher = subprocess.Popen(
                 ["pw-metadata", "-m", "0"],
@@ -186,7 +151,6 @@ class PipeWireCapture:
                 self._follow_default(name)
 
     def _follow_default(self, name: str) -> None:
-        """Умолчание сменилось: незакреплённый захват переходит на новое устройство."""
         with self._lock:
             if self._stopping.is_set() or self._pinned or self._recorder is None or name == self._device.name:
                 return
@@ -195,7 +159,6 @@ class PipeWireCapture:
         self._reacquire()
 
     def _on_recorder_end(self, recorder: _Recorder) -> None:
-        """`pw-record` завершился сам: устройство пропало или процесс упал."""
         with self._lock:
             if self._stopping.is_set() or self._recorder is not recorder:
                 return
@@ -203,11 +166,6 @@ class PipeWireCapture:
         threading.Thread(target=self._reacquire, name=f"spook-reacquire-{self._source.value}", daemon=True).start()
 
     def _reacquire(self) -> None:
-        """Находит устройство для захвата и запускает на нём `pw-record`; сообщает о переходе.
-
-        Закреплённое устройство остаётся целью, пока оно есть; пропавшее закрепление снимается.
-        Без закрепления цель — устройство по умолчанию. Если устройства нет, захват ждёт его появления.
-        """
         previous = self._device
         lost: bool | None = None
         absent_reported = False
@@ -234,7 +192,7 @@ class PipeWireCapture:
                 self._stopping.wait(RETRY_SECONDS)
                 continue
             if target.name == previous.name:
-                self._stopping.wait(RETRY_SECONDS)  # тот же процесс упал на месте — не перезапускать в цикле
+                self._stopping.wait(RETRY_SECONDS)
             try:
                 recorder = _Recorder(self._source, target, self._sink, self._on_recorder_end)
                 recorder.wait_until_streaming()
@@ -255,9 +213,12 @@ class PipeWireCapture:
                 self._report(DeviceChange(self._source, target.description, lost=True))
             elif target.name != previous.name or absent_reported:
                 self._report(DeviceChange(self._source, target.description))
-            if recorder.finished:
-                self._on_recorder_end(recorder)
+            self._replay_end_missed_while_starting(recorder)
             return
+
+    def _replay_end_missed_while_starting(self, recorder: _Recorder) -> None:
+        if recorder.finished:
+            self._on_recorder_end(recorder)
 
     def _report(self, change: DeviceChange) -> None:
         if not self._stopping.is_set():
@@ -265,10 +226,6 @@ class PipeWireCapture:
 
 
 class _Recorder:
-    """Один процесс `pw-record`: поток читает stdout порциями по 100 мс и отдаёт их получателю;
-    второй поток сливает stderr, храня последние строки для диагностики. Если процесс завершился
-    сам, а не по `stop`, вызывается `on_end`."""
-
     def __init__(
         self, source: Source, device: Device, sink: AudioSink, on_end: Callable[[_Recorder], None]
     ) -> None:
@@ -298,12 +255,7 @@ class _Recorder:
         return self._finished.is_set()
 
     def wait_until_streaming(self) -> None:
-        """Ждёт первой порции звука; если `pw-record` вместо этого завершился — захвата нет.
-
-        Если за отведённое время нет ни того, ни другого, захват считается идущим: устройство могло
-        просто ещё не проснуться.
-        """
-        deadline = time.monotonic() + START_TIMEOUT
+        deadline = time.monotonic() + FAST_FAILURE_WINDOW
         while time.monotonic() < deadline:
             if self._streaming.is_set():
                 return
@@ -332,7 +284,7 @@ class _Recorder:
         try:
             while True:
                 chunk = stdout.read(CHUNK_BYTES)
-                if len(chunk) < CHUNK_BYTES:  # конец потока: процесс завершился
+                if len(chunk) < CHUNK_BYTES:
                     break
                 self._streaming.set()
                 if self._stopping:
@@ -361,7 +313,6 @@ class _Recorder:
 
 
 def pw_dump() -> list[dict[str, Any]]:
-    """Все объекты PipeWire; без PipeWire — `CaptureUnavailable`."""
     try:
         completed = subprocess.run(["pw-dump"], capture_output=True, check=True, timeout=10)
         objects = json.loads(completed.stdout)
@@ -386,7 +337,6 @@ def _node_props(objects: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _default_name(objects: list[dict[str, Any]], key: str) -> str | None:
-    """`node.name` устройства по умолчанию из метаданных `default`: `{"name": "..."}`."""
     for obj in objects:
         if obj.get("type") != "PipeWire:Interface:Metadata" or (obj.get("props") or {}).get("metadata.name") != "default":
             continue
@@ -404,7 +354,6 @@ def _default_name(objects: list[dict[str, Any]], key: str) -> str | None:
 
 
 def _devices(objects: list[dict[str, Any]], source: Source) -> dict[str, Device]:
-    """Устройства, с которых можно захватывать Источник: `node.name` → устройство."""
     return {
         props["node.name"]: Device(props["node.name"], props.get("node.description") or props["node.name"])
         for props in _node_props(objects)
@@ -413,7 +362,6 @@ def _devices(objects: list[dict[str, Any]], source: Source) -> dict[str, Device]
 
 
 def _default_update(line: str, key: str) -> str | None:
-    """`node.name` нового умолчания из строки `pw-metadata -m 0` с данным ключом; иначе None."""
     match = _METADATA_UPDATE.match(line)
     if match is None or match["key"] != key:
         return None

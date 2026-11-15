@@ -1,6 +1,3 @@
-"""Остановка службы: `systemctl --user stop` шлёт `spook serve` SIGTERM. Открытые вкладки (потоки
-событий) не должны задерживать остановку и оставлять в журнале трассировку."""
-
 from __future__ import annotations
 
 import os

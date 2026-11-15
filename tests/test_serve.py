@@ -1,5 +1,3 @@
-"""Служба и доступ: сервер слушает только `127.0.0.1`, порт берётся из настроек."""
-
 from __future__ import annotations
 
 import socket
@@ -17,10 +15,9 @@ def test_server_listens_on_loopback_at_port_from_settings(spook):
 
 
 def network_address() -> str | None:
-    """Адрес машины в сети — тот, с которого она ходит наружу; None, если сети нет."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-            probe.connect(("192.0.2.1", 9))  # UDP: выбирается маршрут, пакеты не уходят
+            probe.connect(("192.0.2.1", 9))
             address = probe.getsockname()[0]
     except OSError:
         return None

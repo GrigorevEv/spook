@@ -1,18 +1,3 @@
-"""Транскрипт: Реплики по порядку времени, собранные в абзацы, и отметки отдельными строками курсивом.
-
-Соседние Реплики одного Источника склеиваются в абзац с одним временем в начале. Новый абзац
-начинается при смене говорящего (Источника), после молчания дольше `MAX_SILENCE_SECONDS` или когда
-абзац перерос `MAX_PARAGRAPH_CHARS`. Отметка (о Паузе, смене устройства или пропуске) закрывает абзац:
-Реплика после неё начинает новый.
-
-После перерыва в работе службы Транскрипт восстанавливается из Заметки (`Transcript.restore`):
-абзацы и отметки — такими, какими записаны; время Реплик внутри абзацев не хранится, поэтому
-продолжение возможно только с новой Реплики после отметки.
-
-Как подписывать время, решает Сессия: Лекция — от начала Сессии (`format_offset`), Встреча — по часам;
-во Встрече абзац несёт ещё пометку говорящего: «Собеседники» (Системный звук) или «Я» (Микрофон).
-"""
-
 from __future__ import annotations
 
 import re
@@ -31,7 +16,6 @@ _MARK_LINE = re.compile(r"^\*(?P<label>[^*].*)\*$")
 
 
 def format_offset(seconds: float) -> str:
-    """Время от начала Сессии в виде `Ч:ММ:СС`."""
     total = int(seconds)
     hours, rest = divmod(total, 3600)
     minutes, secs = divmod(rest, 60)
@@ -41,7 +25,7 @@ def format_offset(seconds: float) -> str:
 @dataclass(frozen=True)
 class Utterance:
     source: Source
-    start: float  # секунды от начала Сессии
+    start: float
     end: float
     text: str
 
@@ -49,12 +33,12 @@ class Utterance:
 @dataclass(frozen=True)
 class Paragraph:
     source: Source
-    start: float  # секунды от начала Сессии
-    end: float  # конец последней Реплики абзаца — от него отсчитывается молчание
+    start: float
+    end: float
     text: str
-    number: int  # порядковый номер в Транскрипте, с единицы; по нему абзац находят на странице
-    label: str  # время в начале абзаца: от начала Сессии (Лекция) или по часам (Встреча)
-    speaker: str | None = None  # «Собеседники» или «Я» во Встрече; в Лекции говорящий не указывается
+    number: int
+    label: str
+    speaker: str | None = None
 
     @property
     def element_id(self) -> str:
@@ -67,9 +51,6 @@ class Paragraph:
 
 @dataclass(frozen=True)
 class PauseMark:
-    """Отметка о Паузе: `*Пауза <начало>–<конец>*`; вид времени (от начала Сессии или по часам) выбирает Сессия.
-    С `title="Пропуск"` — отметка о пропуске: перерыв в работе службы."""
-
     start: str
     end: str
     title: str = "Пауза"
@@ -84,18 +65,13 @@ class PauseMark:
 
 @dataclass(frozen=True)
 class DeviceMark:
-    """Отметка о переходе захвата Источника на другое устройство: `*<время> <Источник> переключён на «…»*`;
-    при пропаже устройства — `*<время> <Источник>: устройство «…» пропало, захват продолжается с «…»*`.
-    Вид времени (от начала Сессии или по часам) выбирает Сессия."""
-
     time: str
     source: Source
-    device_name: str  # новое устройство; пустое — устройства нет
-    lost: str = ""  # название пропавшего устройства, если переход вызван его пропажей
+    device_name: str
+    lost: str = ""
 
     @property
     def text(self) -> str:
-        """Отметка без времени — она же предупреждение на странице."""
         if not self.lost:
             return f"{self.source.label} переключён на «{self.device_name}»"
         continued = f"захват продолжается с «{self.device_name}»" if self.device_name else "захвата нет"
@@ -111,8 +87,6 @@ class DeviceMark:
 
 @dataclass(frozen=True)
 class WrittenMark:
-    """Отметка, восстановленная из Заметки после перерыва в работе службы: текст как записан."""
-
     label: str
 
     def as_markdown(self) -> str:
@@ -125,15 +99,12 @@ Entry = Paragraph | Mark
 
 class Transcript:
     def __init__(self, time_label: Callable[[float], str] = format_offset, speakers: bool = False) -> None:
-        """`time_label` подписывает начало абзаца по его времени от начала Сессии;
-        `speakers` — ставить ли пометку говорящего (Встреча)."""
         self._time_label = time_label
         self._speakers = speakers
         self._entries: list[Entry] = []
 
     @property
     def entries(self) -> tuple[Entry, ...]:
-        """Абзацы и отметки в порядке появления."""
         return tuple(self._entries)
 
     @property
@@ -141,10 +112,6 @@ class Transcript:
         return tuple(entry for entry in self._entries if isinstance(entry, Paragraph))
 
     def add(self, utterance: Utterance) -> tuple[Paragraph, bool]:
-        """Принимает Реплику; возвращает абзац после неё и признак «абзац начат этой Репликой».
-
-        Продолжить можно только последнюю запись, и только если это абзац: отметка закрывает абзац.
-        """
         last = self._entries[-1] if self._entries else None
         if isinstance(last, Paragraph) and self._continues(last, utterance):
             paragraph = replace(last, end=utterance.end, text=f"{last.text} {utterance.text}")
@@ -166,9 +133,6 @@ class Transcript:
         self._entries.append(mark)
 
     def restore(self, markdown: str) -> None:
-        """Абзацы и отметки из текста Заметки под заголовком «Транскрипт» — в начало Транскрипта.
-        Строки, которых Транскрипт не пишет, пропускаются. Время Реплик не восстанавливается:
-        после восстановления первой должна идти отметка."""
         speakers = {label: source for source, label in SPEAKERS.items()}
         for line in markdown.splitlines():
             if paragraph := _PARAGRAPH_LINE.match(line):

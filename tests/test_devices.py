@@ -1,13 +1,10 @@
-"""Смена, пропажа и закрепление устройства — главный шов: подменённый вход разыгрывает события устройств."""
-
 from __future__ import annotations
 
-from conftest import MEETING_NOTE_AFTER_START, NOTE_AFTER_START, meeting_note_text, note_text, speech
+from conftest import MEETING_NOTE_AFTER_START, NO_SPEECH, NOTE_AFTER_START, meeting_note_text, note_text, speech
 from spook.audio import Source
 
 
 def pin_system_device(spook, device: str) -> None:
-    """Закрепляет устройство Системного звука в файле настроек — так, как это сделал бы пользователь."""
     with spook.settings_path.open("a", encoding="utf-8") as file:
         file.write(f'\n[sources]\nsystem = "{device}"\n')
 
@@ -35,7 +32,6 @@ def test_capture_follows_default_device_change_without_stopping_session(spook):
     html = spook.page().text
     assert "Наушники USB" in html
     assert 'class="warning"' not in html, "смена устройства по умолчанию — не повод для предупреждения"
-    # Звук со старого устройства закрыт отметкой: Реплика с нового устройства начинает новый абзац.
     assert note_text(spook) == NOTE_AFTER_START + (
         "\n**0:00:00** Начало. Хвост.\n"
         "\n*0:00:25 Системный звук переключён на «Наушники USB»*\n"
@@ -128,7 +124,6 @@ def test_lost_pinned_device_leaves_mark_and_warning_and_capture_falls_back_to_de
         mark = events.wait_for("mark", containing="пропало")
         spook.audio.feed(speech(20))
         events.wait_for("paragraph", containing="После пропажи.")
-        # Закреплённого устройства больше нет: до конца Сессии захват следует за устройством по умолчанию.
         spook.audio.change_default(Source.SYSTEM, "Наушники USB")
         events.wait_for("state", containing="Наушники USB")
 
@@ -145,8 +140,8 @@ def test_lost_pinned_device_leaves_mark_and_warning_and_capture_falls_back_to_de
 def test_lost_microphone_in_meeting_is_marked_by_clock_and_system_sound_keeps_its_device(spook):
     with spook.settings_path.open("a", encoding="utf-8") as file:
         file.write('\n[sources]\nmic = "Гарнитура"\n')
-    spook.recognizer.say("До пропажи.", "", "")  # Системный звук, 0–60 с
-    spook.recognizer.say("", "", "")  # Микрофон, 0–60 с
+    spook.recognizer.say("До пропажи.", NO_SPEECH, NO_SPEECH)
+    spook.recognizer.say(NO_SPEECH, NO_SPEECH, NO_SPEECH)
     spook.start_meeting()
 
     with spook.events() as events:

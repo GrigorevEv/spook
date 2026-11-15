@@ -1,21 +1,3 @@
-"""Замер GigaAM-v3 e2e_rnnt на CPU: загрузка, память, скорость, две одновременные Реплики, 5 минут потока.
-
-Запуск (onnx-asr):
-    uv run --no-project --with "onnx-asr[cpu,hub]" --with numpy python bench.py --lib onnx-asr --threads 4 \
-        --stages load,single,concurrent
-Запуск (sherpa-onnx):
-    uv run --no-project --with sherpa-onnx --with numpy python bench.py --lib sherpa --threads 4 --stages load,single
-
-Этапы (--stages): load — время загрузки и RSS; single — Реплики 5/10/20 с по одной; concurrent — две
-Реплики по 20 с одновременно (два потока на одной модели; последовательно одной очередью; два процесса,
-каждый со своей моделью), по 3 повтора, медиана; stream — 5 минут реального времени, два Источника,
-нарезка по 20 с, одна очередь (--workers 1) — отставание не должно расти.
-
-Итог — JSON в ~/.local/share/spook/bench/results/<lib>_<quant>_t<threads>.json и таблица в stdout.
-Перед каждым замером проверяется /proc/loadavg (минутная нагрузка ≤ 6, иначе ожидание до 10×60 с);
-нагрузка записывается рядом с каждым числом.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -47,9 +29,6 @@ from benchlib import (  # noqa: E402
 
 ONNX_ASR_DIR = MODELS_DIR / "onnx-asr" / "gigaam-v3-e2e-rnnt"
 SHERPA_DIR = MODELS_DIR / "sherpa-onnx" / "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16"
-
-
-# --- адаптеры библиотек -------------------------------------------------------------------------
 
 
 class OnnxAsrEngine:
@@ -111,9 +90,6 @@ class SherpaEngine:
 
 
 ENGINES = {"onnx-asr": OnnxAsrEngine, "sherpa": SherpaEngine}
-
-
-# --- этапы --------------------------------------------------------------------------------------
 
 
 def timed(fn, *args):
@@ -198,7 +174,8 @@ def _run_pair_threads(engine, a, b) -> tuple[float, float, float, list[str]]:
 def _proc_worker(lib, threads, quant, sample, barrier, q):
     engine = ENGINES[lib](threads, quant)
     x = read_wav(SAMPLES_DIR / sample)
-    engine.recognize(read_wav(SAMPLES_DIR / "utt_05s.wav"))  # прогрев
+    warm_up = read_wav(SAMPLES_DIR / "utt_05s.wav")
+    engine.recognize(warm_up)
     barrier.wait()
     t0 = time.perf_counter()
     text = engine.recognize(x)
@@ -282,7 +259,6 @@ def stage_concurrent(engine, args, repeats: int) -> dict:
 
 
 def stage_stream(engine, args, manifest: dict) -> dict:
-    """Два Источника в реальном времени: каждые 20 с приходят по одному 20-секундному отрезку от каждого."""
     chunk = args.chunk_s * SAMPLE_RATE
     streams = {"A": read_wav(SAMPLES_DIR / "stream_a_300s.wav"), "B": read_wav(SAMPLES_DIR / "stream_b_300s.wav")}
     n_chunks = min(len(x) for x in streams.values()) // chunk
@@ -323,7 +299,6 @@ def stage_stream(engine, args, manifest: dict) -> dict:
             time.sleep(min(0.05, due - now))
         arrival = time.perf_counter()
         if i % 3 == 2:
-            # Состояние перед подачей очередной пары: всё ли предыдущее уже распознано.
             with lock:
                 lat = [d["latency_s"] for d in done]
             print(f"  t={int(arrival - t0)} с: готово {len(lat)} из {2 * i}, не распознано {q.qsize()}, последняя задержка {lat[-1] if lat else '—'} с", flush=True)

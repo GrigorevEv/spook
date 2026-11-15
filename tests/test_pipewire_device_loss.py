@@ -1,12 +1,3 @@
-"""Пропажа закреплённого устройства на настоящем входе PipeWire.
-
-Запуск: `uv run pytest -q -m pipewire`. Устройство Системного звука закрепляется в файле настроек за
-виртуальным устройством вывода; во время захвата виртуальное устройство удаляется. Захват переходит на
-устройство вывода пользователя по умолчанию — только слушает его монитор, умолчаний не меняет и ничего
-не воспроизводит. Смена устройства по умолчанию на настоящем входе не проверяется: пришлось бы менять
-умолчания пользователя; она проверена на подменах (`test_devices.py`, `test_pipewire_following.py`).
-"""
-
 from __future__ import annotations
 
 import os
@@ -15,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from test_pipewire_capture import (  # noqa: F401 — user_devices_untouched: общая проверка после каждого теста
+from test_pipewire_capture import (  # noqa: F401
     OUTPUT_DESCRIPTION,
-    nodes,
+    node_ids_by_name,
     user_devices_untouched,
     virtual_node,
     wait_until,
@@ -30,12 +21,10 @@ pytestmark = pytest.mark.pipewire
 
 @pytest.fixture
 def audio_input() -> PipeWireAudioInput:
-    """Настоящий вход без закреплений: закрепление приходит из файла настроек."""
     return PipeWireAudioInput()
 
 
 def child_programs() -> list[str]:
-    """Имена программ — прямых потомков процесса теста (захваты и слежение за умолчаниями)."""
     found = []
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
@@ -63,17 +52,16 @@ def test_lost_pinned_virtual_device_leaves_mark_and_warning_and_capture_moves_to
             events.wait_for("state", containing=OUTPUT_DESCRIPTION)
             events.wait_for("levels")
 
-            subprocess.run(["pw-cli", "destroy", str(nodes()[virtual_sink])], check=True, capture_output=True, timeout=10)
+            subprocess.run(["pw-cli", "destroy", str(node_ids_by_name()[virtual_sink])], check=True, capture_output=True, timeout=10)
 
             state = events.wait_for("state", containing=default_output)
             mark = events.wait_for("mark", containing="пропало")
-            events.wait_for("levels")  # захват продолжается с устройства по умолчанию
+            events.wait_for("levels")
 
     assert "идёт" in state.data
     expected = f"Системный звук: устройство «{OUTPUT_DESCRIPTION}» пропало, захват продолжается с «{default_output}»"
     assert f"<em>0:00:00 {expected}</em>" in mark.data
     assert f'<p class="warning" role="alert">{expected}</p>' in spook.page().text
-    # Заметка дописывается по ходу Сессии; после «Стоп» Сессия без Реплик её удалит.
     note = next(spook.lectures_dir.iterdir()).read_text(encoding="utf-8")
     assert f"\n*0:00:00 {expected}*\n" in note
 

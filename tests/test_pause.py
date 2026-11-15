@@ -1,5 +1,3 @@
-"""«Пауза» и «Продолжить» в Лекции — главный шов: HTTP, поток событий, Заметка."""
-
 from __future__ import annotations
 
 from conftest import NOTE_AFTER_START, note_text, speech
@@ -19,7 +17,6 @@ def test_pause_closes_current_utterance_and_shows_state_on_pause(spook):
         events.wait_for("state", containing="на Паузе")
         events.wait_for("paragraph-update", containing="Хвост.")
 
-    # Хвост в 5 секунд закрыт Паузой и распознан; молчания перед ним нет, поэтому он продолжает абзац.
     assert [(heard.start, heard.duration) for heard in spook.recognizer.heard] == [(0.0, 20.0), (20.0, 5.0)]
     html = spook.page().text
     assert "на Паузе" in html
@@ -39,7 +36,7 @@ def test_resume_leaves_pause_mark_and_sound_during_pause_is_not_transcribed(spoo
         events.wait_for("paragraph", containing="Начало.")
         spook.pause()
         events.wait_for("paragraph-update", containing="Хвост.")
-        spook.audio.feed(speech(40))  # звук на Паузе пропадает, как в настоящей системе
+        spook.audio.feed(speech(40))
         spook.clock.advance(5 * 60)
 
         response = spook.resume()
@@ -51,8 +48,7 @@ def test_resume_leaves_pause_mark_and_sound_during_pause_is_not_transcribed(spoo
         after = events.wait_for("paragraph", containing="После Паузы.")
 
     assert "<em>Пауза 0:00:25–0:05:25</em>" in mark.data
-    assert "0:00:25" in after.data  # время от начала Сессии без учёта Паузы
-    # Отметка закрывает абзац: Реплика после Паузы начинает новый, хотя молчания в захваченном времени нет.
+    assert "0:00:25" in after.data
     assert note_text(spook) == NOTE_AFTER_START + (
         "\n**0:00:00** Начало. Хвост.\n"
         "\n*Пауза 0:00:25–0:05:25*\n"

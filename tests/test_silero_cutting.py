@@ -1,11 +1,3 @@
-"""Нарезка на Реплики настоящим детектором Silero VAD — главный шов на образцах речи задачи 01.
-
-Запуск: `uv run pytest -q -m slow`. Образцы — открытая речь Russian LibriSpeech, склеенная с паузами
-(`scripts/gigaam-bench/prepare_samples.py`); лежат вне репозитория
-в `~/.local/share/spook/bench/samples`. Модель — `~/.local/share/spook/models/silero-vad` или копия замера.
-Без образцов или модели тесты пропускаются. Звук только читается, на диск ничего не пишется.
-"""
-
 from __future__ import annotations
 
 import json
@@ -24,8 +16,8 @@ pytestmark = pytest.mark.slow
 BENCH_DIR = Path(os.environ.get("SPOOK_BENCH_DIR", "~/.local/share/spook/bench")).expanduser()
 SAMPLES_DIR = BENCH_DIR / "samples"
 MODEL_DIRS = (default_model_dir(), BENCH_DIR / "models" / "onnx-asr" / "silero-vad")
-CHUNK_SECONDS = 0.1  # порциями, как приходит звук из захвата
-TOLERANCE_SECONDS = 0.3  # детектор видит кадрами по 32 мс и добавляет запас 0,1 с
+CHUNK_SECONDS = 0.1
+TOLERANCE_SECONDS = 0.3
 
 
 @pytest.fixture
@@ -37,7 +29,6 @@ def speech_detector() -> SileroSpeechDetection:
 
 
 def sample(name: str) -> tuple[np.ndarray, dict]:
-    """Образец задачи 01: звук и его описание из `samples.json` (фразы и их границы)."""
     path = SAMPLES_DIR / name
     if not path.is_file():
         pytest.skip(f"нет образца {path}: его готовит prepare_samples.py задачи 01")
@@ -55,7 +46,7 @@ def feed(spook, samples: np.ndarray) -> None:
 
 
 def test_phrase_pause_phrase_from_real_speech_gives_utterances_at_phrase_boundaries(spook):
-    audio, source = sample("ppp_0700ms.wav")  # три фразы, паузы между ними 0,7 с
+    audio, source = sample("ppp_0700ms.wav")
     phrases = source["phrases"]
     spook.recognizer.say(*(f"Фраза {number}." for number in range(1, len(phrases) + 1)))
     spook.start_lecture()
@@ -69,7 +60,7 @@ def test_phrase_pause_phrase_from_real_speech_gives_utterances_at_phrase_boundar
 
 
 def test_pause_of_half_a_second_does_not_cut_real_speech(spook):
-    audio, _ = sample("ppp_0500ms.wav")  # те же три фразы, паузы 0,5 с — короче паузы закрытия 0,7 с
+    audio, _ = sample("ppp_0500ms.wav")
     spook.start_lecture()
 
     feed(spook, np.concatenate([audio, np.zeros(SAMPLE_RATE, dtype=np.float32)]))
@@ -81,7 +72,7 @@ def test_pause_of_half_a_second_does_not_cut_real_speech(spook):
 
 
 def test_long_real_speech_without_pauses_is_cut_before_20_seconds_between_sentences(spook):
-    audio, source = sample("speech_45s.wav")  # 48 с: предложения подряд с зазором 0,1 с
+    audio, source = sample("speech_45s.wav")
     sentence_ends = [part["end"] for part in source["glued"]]
     spook.start_lecture()
 
@@ -94,5 +85,5 @@ def test_long_real_speech_without_pauses_is_cut_before_20_seconds_between_senten
     assert all(utterance.duration <= 20.0 for utterance in heard)
     for before, after in zip(heard, heard[1:]):
         cut = before.start + before.duration
-        assert after.start >= cut  # ни одна часть звука не распознаётся дважды
+        assert after.start >= cut
         assert min(abs(cut - end) for end in sentence_ends) <= TOLERANCE_SECONDS, (cut, sentence_ends)

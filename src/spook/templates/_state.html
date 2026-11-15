@@ -6,26 +6,22 @@
 <div class="controls">
   {% if view.state.value == "none" %}
   <form class="start" hx-post="/session/start" hx-target="#notice" hx-swap="innerHTML">
-    {# Вид выбирается до «Старт» и после него не меняется: в идущей Сессии выбора нет, вид показан в состоянии. #}
     <fieldset class="kind-choice">
       <legend>Вид Сессии</legend>
       <label><input type="radio" name="kind" value="meeting"> Встреча</label>
       <label><input type="radio" name="kind" value="lecture" checked> Лекция</label>
     </fieldset>
     <label class="field"><span>Тема</span><input name="topic" maxlength="{{ TOPIC_MAX_LENGTH }}" placeholder="О чём Сессия — можно позже"></label>
-    {# Ссылка нужна только Лекции: при выбранной Встрече поле скрыто стилями (`:has`), сервер её всё равно отбрасывает. #}
     <label class="field link"><span>Ссылка</span><input name="link" placeholder="https://… — видео или страница доклада"></label>
     <div class="buttons">
       <button type="submit" class="primary">Старт</button>
     </div>
   </form>
   {% else %}
-  {# После «Старт» пара видов только показывает вид, неактивной; для чтения с экрана вид назван в состоянии. #}
   <div class="kind-choice locked" aria-hidden="true">
     <span{% if view.kind.value == "meeting" %} class="chosen"{% endif %}>Встреча</span>
     <span{% if view.kind.value == "lecture" %} class="chosen"{% endif %}>Лекция</span>
   </div>
-  {# Тему и Ссылку можно менять до «Стоп»; каждое поле отправляется само при изменении. #}
   <label class="field"><span>Тема</span><input name="topic" value="{{ view.topic }}" maxlength="{{ TOPIC_MAX_LENGTH }}" placeholder="О чём Сессия — можно позже" hx-post="/session/topic" hx-trigger="change" hx-target="#notice" hx-swap="innerHTML"{% if view.state.value == "finishing" %} disabled{% endif %}></label>
   {% if view.kind.value == "lecture" %}
   <label class="field"><span>Ссылка</span><input name="link" value="{{ view.link }}" placeholder="https://… — видео или страница доклада" hx-post="/session/link" hx-trigger="change" hx-target="#notice" hx-swap="innerHTML"{% if view.state.value == "finishing" %} disabled{% endif %}></label>
@@ -40,7 +36,6 @@
       <button type="submit">Продолжить</button>
     </form>
     {% else %}
-    {# «Завершается»: обе кнопки на месте, но заблокированы. #}
     <button type="button" disabled>Пауза</button>
     {% endif %}
     <form hx-post="/session/stop" hx-target="#notice" hx-swap="innerHTML">
