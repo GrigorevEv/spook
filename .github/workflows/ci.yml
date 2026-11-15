@@ -35,4 +35,4 @@ jobs:
         with:
           node-version: 24
       - name: Проверка спек и изменений
-        run: npx --yes @fission-ai/openspec@1.16.1 validate --all --strict --no-interactive
+        run: npx --yes @fission-ai/openspec@2.0.0 validate --all --strict --no-interactive
