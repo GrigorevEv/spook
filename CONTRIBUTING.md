@@ -4,7 +4,7 @@ Spook ведёт один человек вместе с агентами раз
 
 ## После клона
 
-Файлы агента (`.claude/`, `.opencode/`) в git не хранятся: скиллы OpenSpec каждый создаёт для своего агента.
+Файлы агентов (`.agents/`, `.claude/`, `.opencode/`) в git не хранятся: скиллы OpenSpec каждый создаёт у себя. Нужен OpenSpec 2.0 — та же версия, что в CI: он кладёт скиллы в `.agents/skills/`, а агенту, который эту папку не читает (Claude Code), ставит на них ссылки.
 
 ```bash
 openspec config set profile custom
@@ -12,7 +12,7 @@ openspec config set workflows '["propose","explore","apply","update","sync","arc
 openspec init --tools <агент>   # claude, opencode, codex…
 ```
 
-Первые две команды задают глобальный профиль OpenSpec: стандартный профиль `core` не создаёт `openspec-verify-change`. Остальные скиллы — глобальные, в `~/.agents/skills/`.
+Первые две команды задают глобальный профиль OpenSpec: стандартный профиль `core` не создаёт `openspec-verify-change`. Остальные скиллы — глобальные, в `~/.agents/skills/` домашней папки.
 
 ## Метки
 
