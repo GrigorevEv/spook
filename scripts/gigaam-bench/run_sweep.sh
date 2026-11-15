@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Перебор числа потоков onnxruntime для одной библиотеки: загрузка, одиночные Реплики, две одновременные.
-# Использование: ./run_sweep.sh onnx-asr "1 2 4 6 8 10" [extra args bench.py]
-#                ./run_sweep.sh sherpa "1 2 4 6 8 10"
 set -euo pipefail
 cd "$(dirname "$0")"
 lib="$1"; threads="$2"; shift 2

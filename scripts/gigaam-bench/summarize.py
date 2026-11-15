@@ -1,9 +1,3 @@
-"""Сводит JSON-итоги из ~/.local/share/spook/bench/results в таблицы Markdown (для отчёта).
-
-Запуск:
-    uv run --no-project python summarize.py
-"""
-
 from __future__ import annotations
 
 import sys

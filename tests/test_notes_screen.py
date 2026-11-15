@@ -1,5 +1,3 @@
-"""Экран «Заметки»: список Сессий по файлам папок видов, открытие в Obsidian и Вики, перезапуск Агента."""
-
 from __future__ import annotations
 
 import re
@@ -9,7 +7,6 @@ from urllib.parse import unquote
 
 
 def write_note(folder: Path, name: str, date: str, start: str, end: str | None, tag: str, summary: str = "") -> Path:
-    """Заметка так, как её оставляют приложение и Агент: свойства, Выжимка, Транскрипт."""
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{name}.md"
     end_line = f'end: "{end}"\n' if end else ""
@@ -22,7 +19,6 @@ def write_note(folder: Path, name: str, date: str, start: str, end: str | None, 
 
 
 def rows(page: str) -> list[str]:
-    """Строки списка Сессий текстом: ячейки через « | », без разметки."""
     result = []
     for row in re.findall(r'<tr class="note".*?</tr>', page, flags=re.S):
         cells = re.findall(r"<td[^>]*>(.*?)</td>", row, flags=re.S)
@@ -67,7 +63,6 @@ def test_screens_link_to_each_other(spook):
 
 
 def command(spook, action: str, note: Path | str, **fields: str):
-    """Команда экрана «Заметки» так, как её отправляет форма строки."""
     return spook.http.post(f"{spook.base_url}/notes/{action}", data={"note": str(note), **fields})
 
 
@@ -144,7 +139,6 @@ def test_commands_accept_only_session_notes_from_kind_folders(spook, tmp_path):
 
 
 def row_of(spook, name: str) -> str:
-    """Разметка строки Сессии по имени Заметки."""
     [row] = [row for row in re.findall(r'<tr class="note".*?</tr>', notes_page(spook), flags=re.S) if name in row]
     return row
 
@@ -168,7 +162,7 @@ def test_restart_agent_warns_that_summary_will_be_rewritten_and_runs_with_chosen
     spook.wait_until(lambda: "готово" in rows(notes_page(spook))[0] and spook.notify.calls())
 
     [call] = spook.agent.calls()
-    assert call["argv"][: call["argv"].index("--disallowedTools")] == [  # запреты — `test_agent_launch.py`
+    assert call["argv"][: call["argv"].index("--disallowedTools")] == [
         "-p", f"/spook-lecture {note}", "--model", "haiku", "--effort", "low",
         "--output-format", "stream-json", "--verbose", "--include-hook-events",
         "--permission-mode", "default", "--permission-prompts", "none",
@@ -188,8 +182,6 @@ def test_restart_after_which_agent_left_old_summary_unchanged_gives_error_summar
 
 
 def test_after_restarts_session_screen_shows_note_once_with_last_run_state(spook):
-    # Приёмка (задача 30): после двух перезапусков блок Агента на экране «Сессия» показывал одну
-    # Заметку трижды — «готово», «ошибка», «готово» — и все три ссылки «Журнал» вели в один журнал.
     note = write_note(spook.lectures_dir, "2026-11-05 10-00 Репликация в Raft", "2026-11-05", "10:00", "11:05", "лекция", "## О чём\n\nПро Raft.")
     spook.agent.play("summary")
     assert command(spook, "agent", note, model="haiku", effort="low", confirm="yes").status_code == 200
@@ -206,7 +198,6 @@ def test_after_restarts_session_screen_shows_note_once_with_last_run_state(spook
 
 
 def test_agent_log_after_restart_keeps_previous_run_before_new_one(spook):
-    # Приёмка (задача 30): журнал перезапуска затирал журнал прежнего запуска той же Заметки.
     note = write_note(spook.lectures_dir, "2026-11-05 10-00 Репликация в Raft", "2026-11-05", "10:00", "11:05", "лекция", "## О чём\n\nПро Raft.")
     spook.agent.play("summary")
     command(spook, "agent", note, model="sonnet", effort="medium", confirm="yes")
@@ -240,7 +231,7 @@ def test_note_without_summary_offers_agent_start_without_warning(spook):
         "--output-format", "stream-json", "--verbose", "--include-hook-events",
         "--permission-mode", "default", "--permission-prompts", "none",
     ]
-    assert "--append-system-prompt-file" in call["argv"]  # названия заметок для ссылок
+    assert "--append-system-prompt-file" in call["argv"]
     assert call["cwd"] == str(spook.meetings_dir)
 
 
@@ -249,15 +240,15 @@ def test_agent_log_opens_for_every_note_that_had_a_run(spook):
     ran_now = write_note(spook.lectures_dir, "2026-11-06 14-02 Лекция", "2026-11-06", "14:02", "14:47", "лекция")
     ran_before = write_note(spook.lectures_dir, "2026-11-05 10-00 Репликация в Raft", "2026-11-05", "10:00", "11:05", "лекция", "## О чём\n\nПро Raft.")
     never = write_note(spook.meetings_dir, "2026-11-04 09-00 Планёрка", "2026-11-04", "09:00", "09:30", "встреча", "## Суть\n\nПланы.")
-    # Журнал прошлой работы службы — ещё без вида в пути, как его писали прежние версии.
-    (spook.state_dir / "agent").mkdir(parents=True)
-    (spook.state_dir / "agent" / f"{ran_before.stem}.log").write_text("Журнал прошлой работы службы.\n", encoding="utf-8")
+    old_version_log_without_kind = spook.state_dir / "agent" / f"{ran_before.stem}.log"
+    old_version_log_without_kind.parent.mkdir(parents=True)
+    old_version_log_without_kind.write_text("Журнал прошлой работы службы.\n", encoding="utf-8")
     command(spook, "agent", ran_now, model="opus", effort="high")
     spook.wait_until(lambda: "готово" in rows(notes_page(spook))[0])
 
     for note, log in (
         (ran_now, spook.state_dir / "agent" / "lecture" / f"{ran_now.stem}.log"),
-        (ran_before, spook.state_dir / "agent" / f"{ran_before.stem}.log"),
+        (ran_before, old_version_log_without_kind),
     ):
         link = re.search(r'href="(/agent/log\?note=[^"]+)"', row_of(spook, note.stem))
         assert link, note

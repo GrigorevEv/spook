@@ -1,6 +1,3 @@
-"""Подмены внешнего мира для тестов и запуска «на подменах»: вход звука из образцов, детектор речи
-по громкости и сценарный распознаватель."""
-
 from __future__ import annotations
 
 import threading
@@ -18,7 +15,7 @@ DEFAULT_DEVICE = "образцы"
 class FakeCapture:
     source: Source
     device_name: str = DEFAULT_DEVICE
-    pinned: str = ""  # закреплённое устройство; пустое — захват следует за устройством по умолчанию
+    pinned: str = ""
     active: bool = True
     sink: AudioSink = field(default=lambda samples: None, repr=False)
     on_device_change: DeviceSink = field(default=lambda change: None, repr=False)
@@ -28,14 +25,6 @@ class FakeCapture:
 
 
 class FakeAudioInput:
-    """Вход звука, в который звук подаётся вручную: `feed` отдаёт порцию идущему захвату Источника.
-
-    Источники из `unavailable` считаются устройствами, которых нет: их захват начать нельзя.
-    События устройств разыгрываются так же вручную: `change_default` — у Источника сменилось устройство
-    по умолчанию, `lose_device` — устройство пропало. Названия устройств — любые строки.
-    Список устройств для закрепления (`devices`) тест задаёт в `known_devices`.
-    """
-
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._captures: dict[Source, FakeCapture] = {}
@@ -56,12 +45,10 @@ class FakeAudioInput:
 
     @property
     def active_sources(self) -> set[Source]:
-        """Источники, захват которых идёт сейчас."""
         with self._lock:
             return {source for source, capture in self._captures.items() if capture.active}
 
     def feed(self, samples: np.ndarray, source: Source = Source.SYSTEM) -> None:
-        """Подаёт звук; без идущего захвата звук пропадает, как в настоящей системе."""
         with self._lock:
             capture = self._captures.get(source)
         if capture is None or not capture.active:
@@ -69,7 +56,6 @@ class FakeAudioInput:
         capture.sink(samples)
 
     def change_default(self, source: Source, device_name: str) -> None:
-        """Устройство Источника по умолчанию сменилось: незакреплённый захват переходит на него."""
         with self._lock:
             self._defaults[source] = device_name
             capture = self._captures.get(source)
@@ -79,9 +65,6 @@ class FakeAudioInput:
         capture.on_device_change(DeviceChange(source, device_name))
 
     def lose_device(self, device_name: str, new_default: str = "") -> None:
-        """Устройство пропало: захваты с него переходят на устройство Источника по умолчанию и дальше
-        следуют за ним, даже если были закреплены. Если пропало само умолчание, новым умолчанием
-        становится `new_default`; пустое — устройства у Источника больше нет."""
         changes: list[DeviceChange] = []
         with self._lock:
             for source in Source:
@@ -98,11 +81,6 @@ class FakeAudioInput:
 
 
 class LoudnessSpeechDetector:
-    """Детектор речи на подменах: кадр 10 мс громче порога — речь, тише — тишина.
-
-    Образцы «речи» на подменах — шум, тишина — нули, так что нарезка по паузам идёт без модели.
-    """
-
     frame_samples = SAMPLE_RATE // 100
 
     def __init__(self, loudness: float = 0.01) -> None:
@@ -114,26 +92,17 @@ class LoudnessSpeechDetector:
 
 @dataclass(frozen=True)
 class Heard:
-    """Что получил распознаватель: без самого звука, только границы отрезка."""
-
     source: Source
     start: float
     duration: float
 
 
 class ScriptedRecognizer:
-    """Сценарный распознаватель: заданные тексты по порядку отрезков; пустой текст — «тишина».
-
-    Когда сценарий исчерпан, отрезки считаются тишиной. Медленный распознаватель изображается
-    «воротами»: после `hold` каждый отрезок ждёт, пока тест не пропустит его через `release`,
-    так что тест управляет отставанием, не дожидаясь реального времени.
-    """
-
     def __init__(self, *texts: str) -> None:
         self._texts: deque[str] = deque(texts)
         self._gate = threading.Condition()
         self._held = False
-        self._passes = 0  # сколько отрезков пропустить через закрытые ворота
+        self._passes = 0
         self.heard: list[Heard] = []
 
     def say(self, *texts: str) -> None:
@@ -141,19 +110,16 @@ class ScriptedRecognizer:
             self._texts.extend(texts)
 
     def hold(self) -> None:
-        """Распознаватель «задумывается»: отрезки ждут у ворот, пока их не пропустит `release`."""
         with self._gate:
             self._held = True
             self._passes = 0
 
     def release(self, segments: int = 1) -> None:
-        """Пропускает через ворота столько отрезков."""
         with self._gate:
             self._passes += segments
             self._gate.notify_all()
 
     def release_all(self) -> None:
-        """Открывает ворота насовсем: ждущие и будущие отрезки распознаются сразу."""
         with self._gate:
             self._held = False
             self._gate.notify_all()

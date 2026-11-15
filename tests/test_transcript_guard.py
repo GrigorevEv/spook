@@ -1,13 +1,9 @@
-"""Охрана Транскрипта на заглушке Агента: что бы Агент ни сделал от «## Транскрипт» и ниже,
-после его работы Транскрипт прежний, Выжимка на месте, а о вмешательстве сказано на странице и в журнале."""
-
 from __future__ import annotations
 
 from conftest import SseEvent, speech
 
 NOTE_NAME = "2026-11-06 14-02 Лекция"
 
-# Заметка Лекции с одной Репликой после честного Агента (сценарий заглушки `summary`).
 NOTE_WITH_SUMMARY = (
     "---\n"
     "date: 2026-11-06\n"
@@ -24,7 +20,6 @@ NOTE_WITH_SUMMARY = (
     "\n**0:00:00** Реплика.\n"
 )
 
-# Та же Заметка до работы Агента: Выжимки ещё нет.
 NOTE_WITHOUT_SUMMARY = (
     "---\n"
     "date: 2026-11-06\n"
@@ -39,7 +34,6 @@ NOTE_WITHOUT_SUMMARY = (
 
 
 def run_agent(spook, scenario: str, until: str) -> SseEvent:
-    """Лекция с одной Репликой, «Стоп», Агент по сценарию; возвращает событие `agent` с итогом `until`."""
     spook.agent.play(scenario)
     spook.recognizer.say("Реплика.")
     spook.start_lecture()

@@ -1,5 +1,3 @@
-{# Строка Сессии на экране «Заметки». Пока Агент в очереди или работает, строка сама обновляется
-   с сервера; формы перезапуска в ней в это время нет, так что обновление ничего не сбрасывает. #}
 <tr class="note" data-kind="{{ entry.kind.value }}" data-summary="{{ entry.summary.value }}"
     {% if entry.agent_busy %}hx-get="/notes/row?note={{ entry.path|string|urlencode }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
   <td><time>{{ entry.started }}</time></td>

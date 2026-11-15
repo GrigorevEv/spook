@@ -1,9 +1,3 @@
-/* Единственный файл стилей Spook, написан вручную.
-   Светлая и тёмная тема — вслед за системной; без теней, свечения, градиентов и анимаций:
-   единственный переход — сглаживание индикатора уровня. */
-
-/* ---- Палитра ------------------------------------------------------------ */
-
 :root {
   color-scheme: light dark;
   --bg: #f6f5f1;
@@ -40,8 +34,6 @@
     --mark: #8f8d85;
   }
 }
-
-/* ---- Основа ------------------------------------------------------------- */
 
 *,
 *::before,
@@ -86,7 +78,6 @@ time {
   font-variant-numeric: tabular-nums;
 }
 
-/* Подпись поля для чтения с экрана, глазу не нужна. */
 legend {
   position: absolute;
   width: 1px;
@@ -95,8 +86,6 @@ legend {
   clip-path: inset(50%);
   white-space: nowrap;
 }
-
-/* ---- Шапка: «Spook» и три экрана ------------------------------------------ */
 
 header {
   display: flex;
@@ -142,8 +131,6 @@ nav [aria-current="page"] {
 main {
   overflow: auto;
 }
-
-/* ---- Поля и кнопки ------------------------------------------------------ */
 
 .field {
   display: block;
@@ -212,7 +199,6 @@ button:disabled {
   cursor: default;
 }
 
-/* Действия-ссылки: «Открыть в Obsidian», «Открыть страницу Вики» — команды службы, но выглядят ссылками. */
 .links button,
 .row-actions > form button,
 .agent-run summary {
@@ -229,8 +215,6 @@ button:disabled {
 .row-actions > form button:hover {
   border: 0;
 }
-
-/* ---- Предупреждения, ошибки, подсказки ---------------------------------- */
 
 .warning {
   display: block;
@@ -257,8 +241,6 @@ button:disabled {
   display: none;
 }
 
-/* ---- «Сессия»: панель слева, Живой текст справа ------------------------- */
-
 main.session {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
@@ -275,8 +257,6 @@ main.session {
   border-right: 1px solid var(--line);
 }
 
-/* Части состояния — прямые участники столбца панели: так отказ «Старт» стоит под кнопками,
-   хотя состояние и сообщение приходят разными событиями. */
 #session,
 #warnings,
 #backlog {
@@ -292,7 +272,6 @@ main.session {
 #session > .note { order: 6; }
 #agent { order: 7; }
 
-/* Состояние Сессии: точка и слово, таймер, вид и время начала. */
 .state-line {
   display: flex;
   align-items: center;
@@ -339,7 +318,6 @@ main.session {
   font-size: 13px;
 }
 
-/* Вид Сессии: сегментная пара «Встреча | Лекция». */
 .kind-choice {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -388,12 +366,10 @@ main.session {
   opacity: 0.6;
 }
 
-/* Ссылка — только для Лекции. */
 .start:has(input[name="kind"][value="meeting"]:checked) .field.link {
   display: none;
 }
 
-/* Кнопки: «Старт» во всю ширину, «Пауза» и «Стоп» — в два столбца. */
 .buttons {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -415,7 +391,6 @@ main.session {
   padding-right: 0;
 }
 
-/* Источники: название, устройство и индикатор уровня. */
 .sources {
   display: grid;
   gap: 14px;
@@ -457,12 +432,10 @@ main.session {
   transition: width 0.1s linear;
 }
 
-/* Вне «идёт» уровни не приходят: заливка остаётся на нуле и теряет акцент. */
 .status:not([data-state="running"]) ~ .sources .level-fill {
   background: var(--muted);
 }
 
-/* Путь к Заметке идущей Сессии; после «Стоп» Заметку показывает блок Агента. */
 #session > .note {
   color: var(--muted);
   font-size: 13px;
@@ -477,7 +450,6 @@ main.session {
   display: none;
 }
 
-/* Агент: Заметка, состояние Выжимки, открытие. */
 #agent {
   font-size: 14px;
 }
@@ -526,7 +498,6 @@ main.session {
   display: contents;
 }
 
-/* Живой текст. */
 .live {
   min-height: 0;
   padding: 28px 48px 56px;
@@ -574,8 +545,6 @@ main.session {
 #transcript:has(p) + .placeholder {
   display: none;
 }
-
-/* ---- «Заметки»: таблица Сессий ------------------------------------------ */
 
 main.notes {
   padding: 28px 48px;
@@ -647,7 +616,6 @@ tr.note .warning {
   display: contents;
 }
 
-/* «Перезапустить Агента»: форма раскрывается здесь же, в строке, — не модальное окно. */
 .agent-run {
   flex-basis: 100%;
 }
@@ -679,8 +647,6 @@ tr.note .warning {
 .agent-run button {
   justify-self: start;
 }
-
-/* ---- «Настройки»: форма до 60 знаков ------------------------------------ */
 
 main.settings {
   padding: 28px 48px;

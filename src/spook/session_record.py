@@ -1,11 +1,3 @@
-"""Сведения об идущей Сессии на диске — чтобы пережить перерыв в работе службы (сон, сбой, перезапуск).
-
-Файл `<каталог состояния>/session.json`: путь Заметки, вид, Тема, Ссылка, состояние, время начала,
-захваченное время, время последней активности и последней Реплики. Ни звука, ни текста Реплик здесь нет (ADR-0001):
-Транскрипт живёт только в Заметке. Файл пишется целиком и атомарно — во временный файл рядом,
-затем переименованием, — так что после сбоя на диске либо прежние сведения, либо новые.
-"""
-
 from __future__ import annotations
 
 import json
@@ -24,8 +16,6 @@ RECORD_NAME = "session.json"
 
 
 class SessionState(StrEnum):
-    """Состояние Сессии: «нет Сессии» → «идёт» ⇄ «на Паузе» → «завершается» → «нет Сессии»."""
-
     NONE = "none"
     RUNNING = "running"
     PAUSED = "paused"
@@ -46,14 +36,13 @@ class SessionRecord:
     note: Path
     kind: SessionKind
     topic: str
-    named_topic: str  # Тема в имени Заметки
+    named_topic: str
     link: str
-    state: SessionState  # идёт, на Паузе или завершается
+    state: SessionState
     started_at: datetime
-    captured_seconds: float  # захваченное время на момент последней активности
-    last_active_at: datetime  # обновляется, пока служба работает с Сессией; при «завершается» — время конца
+    captured_seconds: float
+    last_active_at: datetime
     paused_at: datetime | None = None
-    # Последняя Реплика (или «Старт», «Продолжить»): перерыв считается тишиной от неё; нет — от последней активности.
     last_speech_at: datetime | None = None
 
     def to_json(self) -> str:
@@ -91,24 +80,19 @@ class SessionRecord:
 
 
 class SessionStore:
-    """Файл сведений; без пути (`None`) служба ничего не хранит."""
-
     def __init__(self, path: Path | None) -> None:
         self._path = path
 
     def save(self, record: SessionRecord) -> None:
         if self._path is None:
             return
-        temporary = self._path.with_name(f".{self._path.name}.tmp")
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            temporary.write_text(record.to_json(), encoding="utf-8")
-            os.replace(temporary, self._path)
+            _write_atomically(self._path, record.to_json())
         except OSError:
             log.exception("Сведения о Сессии не записаны в %s", self._path)
 
     def load(self) -> SessionRecord | None:
-        """Сведения прошлой работы службы; испорченный файл удаляется с записью в журнал."""
         if self._path is None or not self._path.exists():
             return None
         try:
@@ -125,3 +109,9 @@ class SessionStore:
             self._path.unlink(missing_ok=True)
         except OSError:
             log.exception("Сведения о Сессии %s не удалены", self._path)
+
+
+def _write_atomically(path: Path, text: str) -> None:
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_text(text, encoding="utf-8")
+    os.replace(temporary, path)

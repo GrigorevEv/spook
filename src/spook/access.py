@@ -1,21 +1,3 @@
-"""Защита интерфейса без входа и паролей: сервер отвечает только на запросы к своему адресу
-и принимает запросы только со своей страницы.
-
-Промежуточное звено ASGI перед приложением; чужой запрос получает 403 с короткой причиной.
-
-- Заголовок `Host` должен быть `localhost:<порт>` или `127.0.0.1:<порт>` — иначе это подмена DNS
-  (чужое имя, указывающее на 127.0.0.1).
-- Заголовок `Origin`, если браузер его прислал, должен называть свою страницу: `http://<свой Host>`.
-  Чужой сайт, открытый в том же браузере, не может его подделать.
-- Заголовок `Sec-Fetch-Site`, если браузер его прислал, должен быть `same-origin` (своя страница)
-  или `none` (адрес набрал пользователь: закладка, значок). Чужому сайту дозволено одно — открыть
-  нашу страницу по ссылке (`Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`); команды,
-  поток событий и встраивание в чужую страницу отклоняются.
-
-Запрос без этих заголовков считается своим: так ходят программы с этой машины и сама страница
-при обычной навигации.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -35,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 
 def own_hosts(port: int) -> frozenset[str]:
-    """Допустимые значения заголовка `Host`; без порта — только когда порт стандартный."""
     hosts = {f"{name}:{port}" for name in OWN_NAMES}
     if port == 80:
         hosts |= OWN_NAMES
@@ -47,7 +28,6 @@ def own_origins(port: int) -> frozenset[str]:
 
 
 def refusal(method: str, headers: Headers, port: int) -> str | None:
-    """Причина отказа или None, если запрос свой."""
     if headers.get("host", "").lower() not in own_hosts(port):
         return FOREIGN_ADDRESS
     origin = headers.get("origin")
@@ -68,8 +48,6 @@ def _opens_page_by_link(method: str, headers: Headers) -> bool:
 
 
 class AccessGuard:
-    """Оборачивает приложение: чужие запросы получают 403 и до обработчиков не доходят."""
-
     def __init__(self, app: ASGIApp, port: int) -> None:
         self.app = app
         self.port = port

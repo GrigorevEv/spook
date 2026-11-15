@@ -1,9 +1,3 @@
-"""Общие помощники замера: каталоги, нагрузка машины, wav, WER.
-
-Скрипты задачи 01 одноразовые, но воспроизводимые. Данные (модели, звук) лежат
-вне репозитория, в BENCH_DIR (по умолчанию ~/.local/share/spook/bench).
-"""
-
 from __future__ import annotations
 
 import json
@@ -30,10 +24,6 @@ def loadavg() -> tuple[float, float, float]:
 
 
 def wait_for_quiet(limit: float = 6.0, attempts: int = 10, pause_s: float = 60.0) -> str:
-    """Ждёт, пока минутная нагрузка не упадёт ниже limit (до attempts раз по pause_s).
-
-    Возвращает строку /proc/loadavg (три числа) на момент начала замера.
-    """
     for i in range(attempts):
         one, five, fifteen = loadavg()
         if one <= limit:
@@ -45,14 +35,12 @@ def wait_for_quiet(limit: float = 6.0, attempts: int = 10, pause_s: float = 60.0
 
 
 def rss_mb() -> float:
-    """Текущий RSS процесса в МБ (из /proc/self/statm)."""
     with open("/proc/self/statm") as f:
         pages = int(f.read().split()[1])
     return pages * os.sysconf("SC_PAGE_SIZE") / 1024 / 1024
 
 
 def peak_rss_mb() -> float:
-    """Пиковый RSS процесса в МБ (VmHWM из /proc/self/status)."""
     with open("/proc/self/status") as f:
         for line in f:
             if line.startswith("VmHWM:"):
@@ -61,7 +49,6 @@ def peak_rss_mb() -> float:
 
 
 def read_wav(path: Path | str) -> np.ndarray:
-    """Читает 16 кГц моно PCM16 wav в float32 [-1, 1]."""
     with wave.open(str(path), "rb") as w:
         assert w.getframerate() == SAMPLE_RATE, (path, w.getframerate())
         assert w.getnchannels() == 1, (path, w.getnchannels())
@@ -88,12 +75,10 @@ _WORD_RE = re.compile(r"[0-9a-zа-яё]+", re.IGNORECASE)
 
 
 def normalize_words(text: str) -> list[str]:
-    """Слова в нижнем регистре без пунктуации, ё → е (для WER)."""
     return [w.lower().replace("ё", "е") for w in _WORD_RE.findall(text)]
 
 
 def wer(reference: str, hypothesis: str) -> float:
-    """Доля ошибок в словах (Левенштейн по словам) относительно эталона."""
     ref = normalize_words(reference)
     hyp = normalize_words(hypothesis)
     if not ref:

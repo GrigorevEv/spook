@@ -1,39 +1,3 @@
-"""HTTP-интерфейс службы — тот же, которым пользуется страница.
-
-- `GET /` — страница «Сессия» с текущим состоянием.
-- `POST /session/start` (форма: `kind`, необязательные `topic` и `link`), `POST /session/pause`,
-  `POST /session/resume` и `POST /session/stop` — команды; при отказе 409 и причина.
-- `POST /session/topic` (форма: `topic`) и `POST /session/link` (форма: `link`) — Тема и Ссылка
-  идущей Сессии, до «Стоп»; Тема попадёт в имя Заметки после «Стоп», Ссылка — сразу в `source`.
-- `GET /events` — поток событий: при подключении полное состояние (`state`, `transcript`, `agent`,
-  `backlog`), дальше изменения: `state` + `transcript` + `agent` + `backlog` при смене состояния
-  Сессии, `paragraph` на новый абзац, `paragraph-update` на продолжение последнего абзаца — он
-  заменяется на странице по id, `mark` на отметку о Паузе, смене устройства или пропуске, `levels` —
-  JSON с уровнем сигнала Источников `{"system": {"rms": 0.35, "peak": 0.5}}` на каждую порцию звука
-  (названия устройств и предупреждения о пропавших устройствах — в `state`), `agent` при смене
-  состояния Выжимки, `backlog` — отставание распознавания, когда оно меняется (пустое, когда
-  очередь пуста).
-- `GET /notes` — экран «Заметки»: список Сессий по файлам папок видов, новые сверху (`spook.notes`).
-  `GET /notes/row?note=<полный путь>` — одна строка списка: так строка следит за Агентом.
-- `POST /notes/obsidian` и `POST /notes/wiki` (форма: `note` — полный путь к Заметке) — открыть
-  Заметку в Obsidian (`obsidian://open?path=…`) или страницу Вики Лекции (адрес — у инструмента Вики
-  `[programs].wiki`) системным средством открытия `[programs].open`; при отказе 409 и причина.
-- `POST /notes/agent` (форма: `note`, `model`, `effort`, `confirm=yes`) — «Запустить» или
-  «Перезапустить Агента» с выбранными моделью и effort; если Выжимка уже есть, без `confirm`
-  отказ 409 с предупреждением, что она будет написана заново. Команды экрана «Заметки»
-  принимают только Заметки Сессий из папок видов.
-- `GET /agent/log?note=<имя Заметки>&kind=<вид>` — журнал запуска Агента текстом; 404, если журнала нет.
-  Без `kind` (прежние адреса) — журнал по одному имени.
-- `POST /agent/topic` (форма: `note` — полный путь к Заметке, `topic`) — Тема от Агента: так к службе
-  обращается команда `spook topic`. Завершённая Заметка без Темы переименовывается по образцу,
-  в ответ текстом — новый путь; при отказе 409 и причина текстом.
-- `GET /settings` — экран «Настройки»: поля `SCREEN_FIELDS` из `spook.settings` с текущими значениями,
-  устройства для закрепления — у входа звука. `POST /settings` (форма: те же поля) пишет файл
-  настроек и отправляет обратно на экран (303, `?saved=1`); при недопустимых значениях — 422, экран
-  с причинами под полями, файл не меняется. Действует со следующей Сессии и следующего запуска Агента.
-- `/static/…` — htmx, расширение SSE, один файл CSS и один файл JS.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -70,11 +34,20 @@ from spook.session import (
     StateChanged,
 )
 from spook.session_record import RECORD_NAME
-from spook.settings import EFFORTS, SessionKind, Settings, SettingsRejected, save_screen_settings, screen_values
+from spook.settings import (
+    EFFORTS,
+    WHOLE_FILE_KEY,
+    SessionKind,
+    Settings,
+    SettingsRejected,
+    save_screen_settings,
+    screen_values,
+)
 from spook.silero import SileroSpeechDetection
 from spook.transcript import Mark
 
 KEEPALIVE_SECONDS = 15
+_RELOAD_PAGE = {"HX-Refresh": "true"}
 
 
 def create_app(
@@ -86,11 +59,6 @@ def create_app(
     speech_detector: SpeechDetectorFactory | None = None,
     settings_path: Path | None = None,
 ) -> FastAPI:
-    """Собирает службу; `state_dir` — каталог журналов и служебных сведений (по умолчанию
-    `~/.local/state/spook`, в тестах временный); `speech_detector` — детектор речи для нарезки
-    на Реплики (по умолчанию Silero VAD, загружается при первом «Старт»); `settings_path` — файл,
-    в который экран «Настройки» сохраняет изменения (тот же, что читает `load_settings`); без него
-    экран только показывает настройки."""
     state_dir = state_dir or settings_module.state_dir()
     agent = AgentQueue(load_settings, log_dir=state_dir / "agent")
     service = SessionService(
@@ -102,8 +70,7 @@ def create_app(
         speech_detector or SileroSpeechDetection(),
         record_path=state_dir / RECORD_NAME,
     )
-    agent.restore()  # очередь Агента прошлой работы службы — раньше Заметки, завершённой при восстановлении
-    service.restore()  # Сессия, которую застал перерыв в работе службы
+    _restore_agent_queue_first(agent, service)
     templates = Environment(
         loader=PackageLoader("spook", "templates"),
         autoescape=select_autoescape(["html"]),
@@ -113,7 +80,7 @@ def create_app(
     templates.tests["mark"] = lambda entry: isinstance(entry, Mark)
     templates.globals["TOPIC_MAX_LENGTH"] = TOPIC_MAX_LENGTH
     templates.globals["rewrite_warning"] = notes_module.REWRITE_WARNING
-    agent_command = threading.Lock()
+    agent_check_and_enqueue = threading.Lock()
 
     def render(name: str, **context: object) -> str:
         return templates.get_template(name).render(**context)
@@ -122,12 +89,10 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        # Сервер, поднятый заново над тем же приложением, снова отдаёт потоки событий.
         streams.reopen()
         yield
 
     app = FastAPI(title="Spook", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
-    # Сервер (`serve.make_server`) закрывает потоки событий сам при остановке службы.
     app.state.close_event_streams = streams.close
     app.mount("/static", StaticFiles(packages=[("spook", "static")]), name="static")
 
@@ -136,8 +101,6 @@ def create_app(
         return render("session.html", view=service.view())
 
     def session_command(action: Callable[[], object]) -> HTMLResponse:
-        """Команда Сессии со страницы: пустой ответ — страница узнает о новом состоянии из потока
-        событий; отказ — 409 и причина."""
         try:
             action()
         except CommandRejected as rejected:
@@ -173,7 +136,6 @@ def create_app(
         return session_command(lambda: service.set_link(link))
 
     def session_note() -> Path | None:
-        """Заметка идущей Сессии: Агента для неё не запускают."""
         view = service.view()
         return view.note_path if view.state is not SessionState.NONE else None
 
@@ -213,29 +175,27 @@ def create_app(
     def run_agent(
         note: str = Form(""), model: str = Form(""), effort: str = Form(""), confirm: str = Form("")
     ) -> HTMLResponse:
-        with agent_command:  # проверка «Агент уже в очереди» и постановка — без щели между ними
+        with agent_check_and_enqueue:
             try:
                 path = notes_module.run_agent(
                     load_settings(), agent, note, model, effort, confirm == "yes", session_note()
                 )
             except notes_module.NoteRefused as refused:
                 return _rejected(render, str(refused))
-        # Страница перечитывается: строка Заметки показывает очередь и дальше следит за Агентом.
         return HTMLResponse(
-            render("_done.html", text=f"Агент поставлен в очередь: {path.stem}"), headers={"HX-Refresh": "true"}
+            render("_done.html", text=f"Агент поставлен в очередь: {path.stem}"), headers=_RELOAD_PAGE
         )
 
     @app.get("/notes/row", response_class=HTMLResponse)
     def note_row(note: str = "") -> HTMLResponse:
-        """Строка одной Сессии — так строка следит за Агентом, пока он в очереди или работает."""
         settings = load_settings()
         try:
             path, kind = notes_module.find_note(settings, note)
             entry = notes_module.describe(path, kind, agent, session_note())
         except notes_module.NoteRefused:
             entry = None
-        if entry is None:  # Заметку переименовал Агент (Тема) или удалили: список перечитывается целиком
-            return HTMLResponse("", headers={"HX-Refresh": "true"})
+        if entry is None:
+            return HTMLResponse("", headers=_RELOAD_PAGE)
         return HTMLResponse(
             render("_note_row.html", entry=entry, agent_choices=notes_module.agent_choices(settings))
         )
@@ -283,7 +243,7 @@ def create_app(
         form = {key: value for key, value in (await request.form()).items() if isinstance(value, str)}
         values = {**screen_values(load_settings()), **form}
         if settings_path is None:
-            return settings_screen(values, {"": "Здесь настройки не сохраняются: служба запущена без файла настроек"}, False, 409)
+            return settings_screen(values, {WHOLE_FILE_KEY: "Здесь настройки не сохраняются: служба запущена без файла настроек"}, False, 409)
         try:
             save_screen_settings(settings_path, form)
         except SettingsRejected as rejected:
@@ -301,9 +261,12 @@ def create_app(
     return app
 
 
+def _restore_agent_queue_first(agent: AgentQueue, service: SessionService) -> None:
+    agent.restore()
+    service.restore()
+
+
 def _device_choice(audio_input: AudioInput, source: Source, pinned: str) -> dict[str, object]:
-    """Выбор устройства Источника на экране «Настройки»: «по умолчанию», устройства входа звука и
-    закреплённое устройство, даже если его сейчас нет — иначе сохранение молча сняло бы закрепление."""
     options = [("", "по умолчанию")]
     problem = ""
     try:
@@ -321,10 +284,6 @@ def _rejected(render: Callable[..., str], reason: str) -> HTMLResponse:
 
 
 class EventStreams:
-    """Открытые потоки событий. При остановке службы они закрываются сразу: иначе сервер ждёт их
-    до таймаута и обрывает с трассировкой. Потоки, открытые уже после закрытия, кончаются сразу —
-    до нового запуска сервера (`reopen`). Живёт в цикле событий сервера."""
-
     def __init__(self) -> None:
         self.closing = False
         self._queues: set[asyncio.Queue] = set()

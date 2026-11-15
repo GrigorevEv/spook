@@ -1,5 +1,3 @@
-"""Показ «на подменах» (`spook demo`): настоящая служба без PipeWire и модели — звук из образцов, сценарный текст."""
-
 from __future__ import annotations
 
 import re
@@ -26,7 +24,6 @@ def test_demo_plays_scripted_lecture_with_text_appearing_by_itself(demo):
     assert state.name == "state" and "идёт" in state.data
     assert ">0:00:00</time>" in first.data
     assert "Spook слушает звук на компьютере" in first.data
-    # Заметки показа лежат во временной папке, а не в Хранилище пользователя, и исчезают вместе с показом.
     assert note_path.is_relative_to(Path(tempfile.gettempdir()))
     assert "end:" in note and "**0:00:00** " in note
     assert demo.terminate() == 0

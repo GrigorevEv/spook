@@ -1,8 +1,3 @@
-"""Сквозные сценарии в настоящем браузере: экраны «Заметки» и «Настройки» на службе с подменами.
-
-Элементы выбираются по роли и тексту, а не по классам оформления.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -18,7 +13,6 @@ NOTE_NAME = "2026-11-06 14-02 Репликация в Raft"
 
 
 def lecture_with_summary(spook) -> None:
-    """Лекция «Репликация в Raft» от «Старт» до «Стоп»; заглушка Агента пишет Выжимку."""
     spook.agent.play("summary")
     spook.recognizer.say("Лидер принимает записи.")
     with spook.events() as events:
@@ -54,17 +48,16 @@ def test_notes_screen_shows_summary_state_opens_agent_log_and_restarts_agent_onl
     row.get_by_label("Модель").select_option("haiku")
     row.get_by_label("Effort").select_option("low")
     understood = row.get_by_role("checkbox", name="понимаю, запустить заново")
-    spook.agent.play("wait")  # Агент работает, пока тест его не отпустит
+    spook.agent.play("wait")
 
-    row.get_by_role("button", name="Запустить").click()  # без флажка браузер форму не отправляет
+    row.get_by_role("button", name="Запустить").click()
 
     assert understood.evaluate("box => box.validity.valueMissing")
-    assert len(spook.agent.calls()) == 1  # только запуск после «Стоп»; итог проверяется ниже по всем запускам
+    assert len(spook.agent.calls()) == 1
 
     understood.check()
     row.get_by_role("button", name="Запустить").click()
 
-    # Страница перечитывается, строка следит за Агентом сама, пока он не закончит.
     row = row_of(page, "Репликация в Raft")
     expect(row).to_contain_text("работает")
     expect(row.get_by_text("Перезапустить Агента")).to_have_count(0)
@@ -74,7 +67,7 @@ def test_notes_screen_shows_summary_state_opens_agent_log_and_restarts_agent_onl
     screenshot(page, "заметки-после-перезапуска")
     note = spook.lectures_dir / f"{NOTE_NAME}.md"
     launches = [call["argv"][:6] for call in spook.agent.calls()]
-    assert launches == [  # после «Стоп» — по настройкам, перезапуск — с выбранными моделью и effort
+    assert launches == [
         ["-p", f"/spook-lecture {note}", "--model", "opus", "--effort", "high"],
         ["-p", f"/spook-lecture {note}", "--model", "haiku", "--effort", "low"],
     ]
@@ -106,7 +99,7 @@ def test_settings_screen_saves_auto_stop_and_meeting_model_and_rejects_invalid_v
         "Время автостопа — число минут больше нуля, а не «пять»"
     )
     expect(page.get_by_role("alert").filter(has_text="Настройки не сохранены")).to_be_visible()
-    expect(auto_stop).to_have_value("пять")  # введённое не пропадает: его можно поправить
+    expect(auto_stop).to_have_value("пять")
     screenshot(page, "настройки-отказ")
     assert spook.settings_path.read_bytes() == saved
     page.goto(f"{spook.base_url}/settings")

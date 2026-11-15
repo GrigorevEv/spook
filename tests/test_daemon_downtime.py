@@ -1,9 +1,3 @@
-"""Перерыв в работе службы — главный шов: HTTP, поток событий, Заметка, заглушки Агента и уведомлений,
-управляемые часы и перезапуск службы над тем же каталогом состояния.
-
-Сведения об идущей Сессии служба держит в `<каталог состояния>/session.json`.
-"""
-
 from __future__ import annotations
 
 import json
@@ -42,7 +36,7 @@ def test_session_record_on_disk_has_no_sound_and_no_utterance_text(spook):
     assert record["state"] == "running"
     assert record["started_at"] == "2026-11-06T14:02:00+03:00"
     assert record["captured_seconds"] == 90
-    assert record["last_active_at"] == "2026-11-06T14:03:30+03:00"  # обновляется, пока Сессия идёт
+    assert record["last_active_at"] == "2026-11-06T14:03:30+03:00"
     assert set(record) <= {
         "note", "kind", "topic", "named_topic", "link", "state", "started_at",
         "captured_seconds", "last_active_at", "paused_at", "last_speech_at",
@@ -68,9 +62,9 @@ def test_short_downtime_continues_lecture_in_same_note_with_gap_mark_and_notific
         spook.audio.feed(speech(20))
         spook.clock.advance(20)
         events.wait_for("paragraph", containing="До перерыва.")
-    spook.clock.advance(40)  # служба жива до 14:03, захвачена минута
+    spook.clock.advance(40)
 
-    spook.restart_service(2 * 60)  # служба вернулась в 14:05
+    spook.restart_service(2 * 60)
     spook.recognizer.say("После перерыва.")
 
     with spook.events() as events:
@@ -78,9 +72,9 @@ def test_short_downtime_continues_lecture_in_same_note_with_gap_mark_and_notific
         assert state.name == "state" and "идёт" in state.data
         assert transcript.name == "transcript"
         assert transcript.data.index("До перерыва.") < transcript.data.index("<em>Пропуск 0:01:00–0:03:00</em>")
-        spook.audio.feed(speech(20))  # захват запущен заново
+        spook.audio.feed(speech(20))
         after = events.wait_for("paragraph", containing="После перерыва.")
-    assert "0:01:00" in after.data  # время от начала Лекции без учёта перерыва
+    assert "0:01:00" in after.data
     assert note_text(spook) == NOTE_AFTER_START + (
         "\n**0:00:00** До перерыва.\n"
         "\n*Пропуск 0:01:00–0:03:00*\n"
@@ -90,7 +84,7 @@ def test_short_downtime_continues_lecture_in_same_note_with_gap_mark_and_notific
     assert [call["argv"] for call in spook.notify.calls()] == [
         ["Сессия продолжена", "Перерыв в работе Spook 14:03–14:05, в Заметке отметка о пропуске"]
     ]
-    assert ">0:01:00</time>" in spook.page().text  # таймер — захваченное время, без перерыва
+    assert ">0:01:00</time>" in spook.page().text
 
 
 def test_long_downtime_finishes_meeting_at_last_activity_renames_and_queues_agent(spook):
@@ -102,9 +96,9 @@ def test_long_downtime_finishes_meeting_at_last_activity_renames_and_queues_agen
         spook.audio.feed(speech(20))
         spook.clock.advance(20)
         events.wait_for("paragraph", containing="Обсудили план.")
-    spook.clock.advance(160)  # служба жива до 14:05
+    spook.clock.advance(160)
 
-    spook.restart_service(60 * 60)  # служба вернулась в 15:05
+    spook.restart_service(60 * 60)
 
     note = spook.meetings_dir / "2026-11-06 14-02 Планёрка.md"
     spook.wait_until(lambda: len(spook.notify.calls()) == 2)
@@ -133,17 +127,17 @@ def test_long_downtime_finishes_meeting_at_last_activity_renames_and_queues_agen
     assert "нет Сессии" in page and ">Старт</button>" in page
 
 
-def test_short_downtime_on_pause_keeps_session_on_pause_without_capture(spook):
+def test_short_downtime_on_pause_stays_paused_without_gap_mark(spook):
     spook.recognizer.say("До Паузы.")
     spook.start_lecture()
     with spook.events() as events:
         spook.audio.feed(speech(20))
         spook.clock.advance(20)
         events.wait_for("paragraph", containing="До Паузы.")
-    spook.pause()  # 14:02:20, захвачено 20 секунд
-    spook.clock.advance(100)  # служба жива до 14:04
+    spook.pause()
+    spook.clock.advance(100)
 
-    spook.restart_service(3 * 60)  # служба вернулась в 14:07
+    spook.restart_service(3 * 60)
     spook.recognizer.say("После Паузы.")
 
     page = spook.page().text
@@ -158,7 +152,6 @@ def test_short_downtime_on_pause_keeps_session_on_pause_without_capture(spook):
         events.wait_for("mark", containing="Пауза")
         spook.audio.feed(speech(20))
         events.wait_for("paragraph", containing="После Паузы.")
-    # Пауза покрывает и перерыв: отдельной отметки о пропуске на Паузе нет.
     assert note_text(spook) == NOTE_AFTER_START + (
         "\n**0:00:00** До Паузы.\n"
         "\n*Пауза 0:00:20–0:05:00*\n"
@@ -173,9 +166,9 @@ def test_short_downtime_in_meeting_marks_gap_by_clock_and_restarts_both_sources(
         spook.audio.feed(speech(20), Source.SYSTEM)
         spook.clock.advance(20)
         events.wait_for("paragraph", containing="Начали.")
-    spook.clock.advance(40)  # служба жива до 14:03
+    spook.clock.advance(40)
 
-    spook.restart_service(2 * 60)  # служба вернулась в 14:05
+    spook.restart_service(2 * 60)
     spook.recognizer.say("Я снова здесь.")
 
     assert spook.audio.active_sources == {Source.SYSTEM, Source.MIC}
@@ -200,7 +193,7 @@ def test_record_of_session_whose_note_is_gone_is_removed_silently(spook, caplog)
     assert not (spook.state_dir / "session.json").exists()
     assert "нет Сессии" in spook.page().text
     assert spook.notify.calls() == [] and spook.agent.calls() == []
-    assert "больше нет" in caplog.text  # запись в журнале службы
+    assert "больше нет" in caplog.text
 
 
 def test_long_downtime_of_session_without_utterances_removes_empty_note_without_agent(spook):
@@ -222,17 +215,16 @@ def test_short_sleep_without_restart_leaves_gap_mark_before_speech_after_waking(
     spook.start_lecture()
     with spook.events() as events:
         spook.audio.feed(speech(30))
-        spook.clock.advance(30)  # служба жива до 14:02:30, захвачено 30 секунд
+        spook.clock.advance(30)
         events.wait_for("paragraph", containing="До сна.")
 
-        spook.clock.sleep(3 * 60)  # проснулись в 14:05:30, таймеры службы ещё не сработали
+        spook.clock.sleep(3 * 60)
         spook.audio.feed(speech(20))
 
         mark = events.wait_for("mark", containing="Пропуск")
         events.wait_for("paragraph", containing="После сна.")
 
     assert "<em>Пропуск 0:00:30–0:03:30</em>" in mark.data
-    # Недорезанный до сна звук распознан и записан до отметки; после неё — новый абзац.
     assert note_text(spook) == NOTE_AFTER_START + (
         "\n**0:00:00** До сна. Хвост.\n"
         "\n*Пропуск 0:00:30–0:03:30*\n"
@@ -252,10 +244,10 @@ def test_long_sleep_without_restart_finishes_session_at_last_activity_not_at_wak
     with spook.events() as events:
         spook.audio.feed(speech(20))
         events.wait_for("paragraph", containing="До сна.")
-        spook.clock.advance(3 * 60)  # служба жива до 14:05
+        spook.clock.advance(3 * 60)
 
         spook.clock.sleep(60 * 60)
-        spook.clock.advance(30)  # первая же проверка после пробуждения видит перерыв
+        spook.clock.advance(30)
 
         events.wait_for("state", containing="нет Сессии")
         events.wait_for("agent", containing="готово")
@@ -269,15 +261,15 @@ def test_long_sleep_without_restart_finishes_session_at_last_activity_not_at_wak
 
 
 def test_clock_jump_caught_by_auto_stop_check_still_ends_session_at_last_activity(spook):
-    spook.write_settings(auto_stop_minutes=1.25)  # проверка автостопа в 14:03:15 — раньше следующей отметки активности
+    spook.write_settings(auto_stop_minutes=1.25)
     spook.recognizer.say("До скачка.")
     spook.start_lecture()
     with spook.events() as events:
         spook.audio.feed(speech(20))
         events.wait_for("paragraph", containing="До скачка.")
-        spook.clock.advance(70)  # служба жива до 14:03
+        spook.clock.advance(70)
 
-        spook.clock.set(spook.clock.now() + timedelta(minutes=10))  # часы прыгнули, опоздавшие таймеры — сразу
+        spook.clock.set(spook.clock.now() + timedelta(minutes=10))
 
         events.wait_for("state", containing="нет Сессии")
 
@@ -291,15 +283,14 @@ def test_downtime_while_finishing_completes_note_at_stop_time_and_queues_agent(s
     with spook.events() as events:
         spook.audio.feed(speech(20))
         events.wait_for("paragraph", containing="Успели распознать.")
-    spook.recognizer.hold()  # очередь распознавания не дорабатывается
+    spook.recognizer.hold()
     spook.audio.feed(speech(5))
     spook.clock.advance(100)
-    spook.stop()  # 14:03:40 — «завершается», и тут служба обрывается
+    spook.stop()
 
-    spook.restart_service(60 * 60)  # звук, ждавший распознавания, пропал вместе с прежней службой
+    spook.restart_service(60 * 60)
 
     spook.wait_until(lambda: spook.notify.calls())
-    # Завершение после «Стоп» — без уведомления о перерыве; уведомляет только Агент.
     assert [call["argv"] for call in spook.notify.calls()] == [["Выжимка готова", NOTE_NAME]]
     assert 'end: "14:03"' in note_text(spook)
     assert not (spook.state_dir / "session.json").exists()
@@ -312,10 +303,10 @@ def test_silence_before_sleep_counts_together_with_sleep_and_finishes_session_at
     with spook.events() as events:
         spook.audio.feed(speech(20))
         events.wait_for("paragraph", containing="Последняя Реплика.")
-        spook.clock.advance(4 * 60 + 30)  # 4,5 минуты тишины, служба жива до 14:06:30
+        spook.clock.advance(4 * 60 + 30)
 
-        spook.clock.sleep(4 * 60 + 30)  # 4,5 минуты сна: сам перерыв короче автостопа
-        spook.audio.feed(speech(20))  # звук после пробуждения — первым видит перерыв
+        spook.clock.sleep(4 * 60 + 30)
+        spook.audio.feed(speech(20))
 
         events.wait_for("state", containing="нет Сессии")
 
@@ -333,9 +324,9 @@ def test_silence_before_restart_counts_together_with_downtime_and_finishes_sessi
     with spook.events() as events:
         spook.audio.feed(speech(20))
         events.wait_for("paragraph", containing="Последняя Реплика.")
-    spook.clock.advance(4 * 60 + 30)  # 4,5 минуты тишины, служба жива до 14:06:30
+    spook.clock.advance(4 * 60 + 30)
 
-    spook.restart_service(4 * 60 + 30)  # служба вернулась в 14:11
+    spook.restart_service(4 * 60 + 30)
 
     spook.wait_until(lambda: len(spook.notify.calls()) == 2)
     assert [call["argv"] for call in spook.notify.calls()] == [
@@ -351,14 +342,14 @@ def test_after_short_downtime_silence_is_counted_from_last_utterance_not_from_re
     with spook.events() as events:
         spook.audio.feed(speech(20))
         events.wait_for("paragraph", containing="Последняя Реплика.")
-    spook.clock.advance(60)  # служба жива до 14:03
+    spook.clock.advance(60)
 
-    spook.restart_service(2 * 60)  # служба вернулась в 14:05, тишина — 3 минуты
+    spook.restart_service(2 * 60)
     assert "идёт" in spook.page().text
 
     spook.clock.advance(2 * 60 - 1)
     assert "идёт" in spook.page().text
-    spook.clock.advance(1)  # пять минут от последней Реплики
+    spook.clock.advance(1)
 
     spook.wait_until(lambda: "нет Сессии" in spook.page().text)
     assert 'end: "14:07"' in note_text(spook)

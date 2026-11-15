@@ -38,7 +38,7 @@ uv run --no-project python summarize.py
 - `prepare_samples.py` — образцы: что откуда берётся, описано в начале файла; манифест с эталонными текстами — `samples/samples.json`.
 - `fetch_models.py` — загрузка моделей в `models/`.
 - `bench.py` — замер (`--lib onnx-asr|sherpa`, `--threads`, `--quant int8|fp32`, `--stages load,single,concurrent,stream`, `--workers`). Итог — `results/<lib>_<quant>_t<threads><tag>.json` с нагрузкой рядом с каждым числом.
-- `run_sweep.sh` — перебор числа потоков для одной библиотеки.
+- `run_sweep.sh` — перебор числа потоков для одной библиотеки: `./run_sweep.sh <onnx-asr|sherpa> "<потоки через пробел>" [аргументы bench.py]`.
 - `sherpa_check.py` — быстрая проверка, что sherpa-onnx даёт тот же текст.
 - `vad_tune.py` — подбор детектора; итог `results/vad_tune.json`.
 - `summarize.py` — таблицы для отчёта.

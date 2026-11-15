@@ -1,10 +1,3 @@
-"""Заглушка программы системных уведомлений: запоминает вызов в `notify-calls.jsonl` каталога управления.
-
-Запуск: `notify_stub.py <каталог управления> <аргументы, как у notify-send>`.
-Сценарий `notify-scenario` (по умолчанию `ok`): `ok` — код возврата 0; `fail` — сообщение в stderr
-и код 1, как у `notify-send` без службы уведомлений.
-"""
-
 from __future__ import annotations
 
 import json

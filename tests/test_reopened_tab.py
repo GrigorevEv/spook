@@ -1,19 +1,15 @@
-"""Повторное открытие вкладки: Сессия живёт в службе, а не во вкладке (главный шов, два подключения к потоку)."""
-
 from __future__ import annotations
 
-from conftest import speech
+from conftest import NO_SPEECH, speech
 
 
 def test_session_continues_after_all_tabs_closed_and_new_tab_gets_full_state(spook):
-    # Между Репликами по 20 секунд тишины, чтобы каждая стала отдельным абзацем.
-    spook.recognizer.say("При открытой вкладке.", "", "Пока вкладок не было.", "", "После новой вкладки.")
+    spook.recognizer.say("При открытой вкладке.", NO_SPEECH, "Пока вкладок не было.", NO_SPEECH, "После новой вкладки.")
     spook.start_lecture()
 
     with spook.events() as first_tab:
         spook.audio.feed(speech(20))
         first_tab.wait_for("paragraph", containing="При открытой вкладке.")
-    # Все вкладки закрыты: захват и распознавание идут дальше.
     spook.audio.feed(speech(40))
     spook.wait_until(lambda: "Пока вкладок не было." in spook.page().text)
     spook.clock.advance(65)
@@ -36,14 +32,12 @@ def test_session_continues_after_all_tabs_closed_and_new_tab_gets_full_state(spo
 
 
 def test_event_stream_after_server_restart_gets_full_state(spook):
-    # Остановка сервера закрывает потоки событий; поднятый заново сервер снова их отдаёт —
-    # так вкладка после обрыва переподключается и получает полное состояние.
     spook.recognizer.say("До обрыва.")
     spook.start_lecture()
     spook.audio.feed(speech(20))
     spook.wait_until(lambda: "До обрыва." in spook.page().text)
 
-    spook.restart()
+    spook.restart_server()
 
     with spook.events() as tab:
         state = tab.next_event()

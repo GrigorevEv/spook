@@ -1,18 +1,3 @@
-"""Запуск настоящего Claude Code и причины ошибок — на заглушке, которая проигрывает вывод из пробы.
-
-Образцы в `tests/data/claude/` — строки вывода `--output-format stream-json --verbose` из пробы
-(`docs/research/headless-skill-probe.md`):
-
-- `hook-blocked.jsonl` — № 03, блокировка хуком `UserPromptSubmit` (код возврата 0);
-- `success-with-denials.jsonl` — № 04 без сообщений модели: хуки, `init`, загрузка лимита,
-  два `permission_denied`, итог `result` с `permission_denials` (код 0);
-- `no-network.jsonl` — № 07 (десять `api_retry`) и итог того же сценария из № 08 (код 1);
-- `bad-flags.stderr` — № 02, неверные флаги: stdout пуст, причина в stderr (код 1);
-- `rate-limit.jsonl`, `api-error.jsonl` — в пробе не вызывались; собраны из настоящих строк по
-  документации: `rate_limit_event` со `status: "rejected"`, `api_retry` с `error: "rate_limit"`,
-  итог с `is_error: true` и `api_error_status` 429 или 500.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,7 +9,6 @@ SAMPLES_DIR = Path(__file__).parent / "data" / "claude"
 
 
 def run_agent(spook, scenario: str, until: str) -> SseEvent:
-    """Лекция с одной Репликой, «Стоп», Агент по сценарию заглушки; событие `agent` с итогом `until`."""
     spook.agent.play(scenario)
     spook.recognizer.say("Реплика.")
     spook.start_lecture()
@@ -52,12 +36,8 @@ def test_meeting_agent_works_in_meetings_folder(spook):
     assert [call["cwd"] for call in spook.agent.calls()] == [str(spook.meetings_dir)]
 
 
-def denied_rules(*folders) -> list[str]:
-    """Запреты запуска: правка `.claude/` на любой глубине в рабочем каталоге и Хранилищах (настройки
-    и хуки следующего запуска) и правка `_tools/`, `_templates/` Вики. Форма `Edit(//абсолютный путь)`
-    по документации Claude Code (Permissions, «Read and Edit»): `//` — от корня файловой системы,
-    правило `Edit` действует на все встроенные инструменты записи."""
-    *folders, wiki = folders
+def denied_rules(*folders_then_wiki) -> list[str]:
+    *folders, wiki = folders_then_wiki
     return [
         *(f"Edit(/{folder}/**/.claude/**)" for folder in folders),
         f"Edit(/{wiki}/_tools/**)",
@@ -70,7 +50,6 @@ def test_lecture_agent_is_denied_editing_claude_settings_and_wiki_tools_whatever
 
     [call] = spook.agent.calls()
     flag = call["argv"].index("--disallowedTools")
-    # Рабочий каталог Лекции — корень Вики, он первым; затем папки Встреч и Лекций.
     assert call["argv"][flag + 1 :] == denied_rules(spook.wiki_dir, spook.meetings_dir, spook.lectures_dir, spook.wiki_dir)
 
 
@@ -86,7 +65,6 @@ def test_meeting_agent_is_denied_the_same_and_its_folder_claude_settings(spook):
 
     [call] = spook.agent.calls()
     flag = call["argv"].index("--disallowedTools")
-    # Рабочий каталог Встречи — папка Встреч, она первой; затем папка Лекций и Вики.
     rules = denied_rules(spook.meetings_dir, spook.lectures_dir, spook.wiki_dir, spook.wiki_dir)
     assert call["argv"][flag + 1 : flag + 1 + len(rules)] == rules
     assert call["argv"][flag + 1 + len(rules)] == "--append-system-prompt-file"
@@ -147,7 +125,7 @@ def test_run_that_failed_before_output_shows_its_stderr(spook):
 
 
 def test_run_longer_than_timeout_is_stopped_and_gives_error_time_exceeded(spook):
-    spook.write_settings(agent={"timeout_minutes": 0.02})  # 1,2 секунды; заглушка висит 30
+    spook.write_settings(agent={"timeout_minutes": 0.02})
 
     agent = run_agent(spook, "hang", until="ошибка")
 
@@ -195,8 +173,7 @@ def test_model_and_effort_in_project_skill_header_give_warning_on_page_and_in_jo
 
 
 def test_model_in_user_skill_header_gives_warning(spook):
-    # Каталог Claude Code пользователя в тестах — `$CLAUDE_CONFIG_DIR` из обвязки (`conftest.py`).
-    skill = spook.state_dir.parent.parent / "claude-config" / "skills" / "spook-lecture" / "SKILL.md"
+    skill = spook.claude_config_dir / "skills" / "spook-lecture" / "SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text(SKILL_WITH_MODEL.replace("effort: high\n", ""), encoding="utf-8")
 

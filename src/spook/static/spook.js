@@ -1,5 +1,3 @@
-// Единственный файл скриптов страницы: таймер Сессии, индикаторы уровня Источников и прокрутка Живого текста.
-// Состояние приходит с сервера потоком событий.
 (function () {
   "use strict";
 
@@ -14,7 +12,6 @@
     return hours + ":" + pad(minutes) + ":" + pad(seconds);
   }
 
-  // Сервер присылает прошедшее время в data-elapsed; дальше таймер идёт сам, пока Сессия «идёт».
   function tick() {
     var timers = document.querySelectorAll("time.timer[data-running='true']");
     for (var i = 0; i < timers.length; i++) {
@@ -26,13 +23,10 @@
     }
   }
 
-  // Точка отсчёта фиксируется сразу, как только состояние попало на страницу, а не на первом тике.
   document.addEventListener("DOMContentLoaded", tick);
   document.addEventListener("htmx:sseMessage", tick);
   setInterval(tick, 1000);
 
-  // Уровень сигнала: событие `levels` несёт JSON {"system": {"rms": 0.35, "peak": 0.5}, …};
-  // RMS переводится в децибелы полной шкалы, шкала индикатора — от −60 дБ (тишина) до 0.
   var QUIETEST_DB = -60;
 
   function percent(rms) {
@@ -66,29 +60,25 @@
 
   document.addEventListener("sse:levels", showLevels);
 
-  // Прокрутка Живого текста держится у конца, пока пользователь сам не ушёл вверх.
   var STICK_PX = 48;
-  var stick = true;
+  var stickToEnd = true;
 
   function live() {
     return document.getElementById("live");
   }
 
-  // Прокрутку делает только пользователь (или эта же функция); рост текста её не вызывает.
-  document.addEventListener(
-    "scroll",
-    function (event) {
-      var column = live();
-      if (event.target === column) {
-        stick = column.scrollHeight - column.scrollTop - column.clientHeight <= STICK_PX;
-      }
-    },
-    true
-  );
+  function rememberUserScroll(event) {
+    var column = live();
+    if (event.target === column) {
+      stickToEnd = column.scrollHeight - column.scrollTop - column.clientHeight <= STICK_PX;
+    }
+  }
+
+  document.addEventListener("scroll", rememberUserScroll, true);
 
   document.addEventListener("htmx:sseMessage", function () {
     var column = live();
-    if (column && stick) {
+    if (column && stickToEnd) {
       column.scrollTop = column.scrollHeight;
     }
   });

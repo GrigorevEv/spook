@@ -1,25 +1,3 @@
-"""Установка `spook install` и удаление `spook uninstall`.
-
-Установка:
-1. ставит приложение инструментом `uv` (`uv tool install --reinstall <репозиторий>` → `~/.local/bin/spook`),
-   чтобы служба работала с установленной копией, а не с рабочим каталогом;
-2. скачивает модели командой подготовки установленной копии (`spook prepare`; уже скачанные не трогает);
-3. подключает Скиллы из `skills/` репозитория симлинками в `~/.claude/skills/`; чужие одноимённые
-   каталоги и ссылки не трогает, ссылку в никуда (от удалённой копии репозитория) заменяет;
-4. кладёт значок «Spook» в меню (`~/.local/share/applications/spook.desktop`, открывает вкладку службы);
-5. пишет пользовательскую службу `~/.config/systemd/user/spook.service` и включает её; если служба уже
-   работала — перезапускает на новой копии.
-
-Служба привязана к графическому сеансу (`graphical-session.target`), а не к `default.target`: при входе
-`default.target` достигается раньше, чем GNOME передаёт менеджеру `DISPLAY`, `WAYLAND_DISPLAY` и
-`XDG_CURRENT_DESKTOP`, а без них не работает открытие Заметок через `xdg-open`. PATH пользовательского
-systemd не содержит `~/.local/bin`, поэтому он задан в unit-файле: там Claude Code, `uv` и сама `spook`
-(команда `spook topic` для Агента).
-
-Повторная установка безопасна. Удаление снимает службу, значок, ссылки на Скиллы этого репозитория и
-инструмент; настройки, модели и журналы остаются.
-"""
-
 from __future__ import annotations
 
 import subprocess
@@ -52,7 +30,7 @@ WantedBy=graphical-session.target
 
 
 class InstallError(Exception):
-    """Шаг установки не удался; текст — причина для пользователя."""
+    pass
 
 
 def desktop_entry(port: int) -> str:
@@ -71,7 +49,6 @@ StartupNotify=false
 
 
 def run_command(command: list[str]) -> None:
-    """Настоящий запуск шага установки: команда видна пользователю, вывод идёт в терминал."""
     print("$", " ".join(command), flush=True)
     try:
         subprocess.run(command, check=True)
@@ -90,7 +67,7 @@ def install(repo: Path, home: Path, port: int, run: Runner = run_command) -> Non
 
     _write(_unit(home), SERVICE_UNIT)
     run(["systemctl", "--user", "daemon-reload"])
-    run(["systemctl", "--user", "try-restart", SERVICE])  # уже работающая служба — на новую копию
+    run(["systemctl", "--user", "try-restart", SERVICE])
     run(["systemctl", "--user", "enable", "--now", SERVICE])
     print(f"Spook установлен: служба {SERVICE} включена, вкладка — http://localhost:{port}/")
 
@@ -115,7 +92,6 @@ def uninstall(repo: Path, home: Path, run: Runner = run_command) -> None:
 
 
 def find_repo(start: Path) -> Path | None:
-    """Корень репозитория Spook: каталог с `pyproject.toml` проекта `spook` от `start` вверх."""
     for folder in (start, *start.parents):
         project = folder / "pyproject.toml"
         if project.is_file() and 'name = "spook"' in project.read_text(encoding="utf-8"):
@@ -134,7 +110,7 @@ def _link_skills(repo: Path, home: Path) -> None:
         link = target_dir / skill.name
         if link.is_symlink() and link.resolve() == skill.resolve():
             continue
-        if link.is_symlink() and not link.exists():  # ссылка в никуда — от удалённой копии репозитория
+        if link.is_symlink() and not link.exists():
             link.unlink()
         if link.exists() or link.is_symlink():
             print(f"Скилл {skill.name} не подключён: {link} уже занят чужим Скиллом")
