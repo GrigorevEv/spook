@@ -19,7 +19,7 @@ openspec init --tools <агент>   # claude, opencode, codex…
 | # | Что сделать | Что получится |
 |---|---|---|
 | 1 | `gh`: «заведи issue: …» | Issue `#N` с меткой типа |
-| 2 | `grill-with-docs #N`, если есть открытые решения | Решения приняты, `GLOSSARY.md` и ADR обновлены |
+| 2 | `grill-me #N`, если есть открытые решения | Решения приняты; новые термины, ADR и исследования записаны |
 | 3 | Ветка `<N>-<change>`, `openspec-propose <change>` — в той же сессии | `proposal.md`, дельты спек, `design.md`, `tasks.md` |
 | 4 | Прочитать `proposal.md` и дельты, `commit` | План согласован до кода |
 | 5 | Новая сессия, `tdd`, `openspec-apply-change <change>` | Код, отмеченные задачи |
@@ -38,20 +38,20 @@ openspec init --tools <агент>   # claude, opencode, codex…
 | `chore`, `documentation` | `ghpr` → `ghm`, без OpenSpec |
 | Чужой issue | Поставь метку типа, дальше — по типу |
 
-Большая неясная работа на несколько сессий — сначала интервью (`grill-with-docs` или `grill-me`), потом несколько изменений OpenSpec, каждое в своей ветке; `Fixes #N` — только в последнем PR, в остальных `Refs #N`. Параллельная работа — каждая ветка в своём worktree.
+Большая неясная работа на несколько сессий — сначала интервью (`grill-me`), потом несколько изменений OpenSpec, каждое в своей ветке; `Fixes #N` — только в последнем PR, в остальных `Refs #N`. Параллельная работа — каждая ветка в своём worktree.
 
-## Интервью: `grill-with-docs` или `grill-me`
+## Интервью: `grill-me`
 
-Оба скилла расспрашивают, пока все решения не приняты. `grill-with-docs` по ходу пишет `GLOSSARY.md` и ADR: бери его, когда меняется язык проекта или принимаются решения о продукте. Для остального — порядок работы, инструменты, документация — бери `grill-me`: то же интервью без этих файлов.
+`grill-me` расспрашивает, пока все решения не приняты. Когда ты подтвердил итог, агент по правилам `AGENTS.md` записывает новые термины в `GLOSSARY.md`, решения — в `docs/adr/`, исследования — в `docs/research/`. Записывается только то, от чего зависит код или поведение Spook; правила — в конце `GLOSSARY.md` и в `README.md` этих папок.
 
 ## Скиллы
 
 | Когда | Скиллы |
 |---|---|
-| В цепочке | `gh`, `ghpr`, `ghm`, `commit`, `grill-with-docs`, `grill-me`, `tdd`, `code-review`, `openspec-propose`, `openspec-apply-change`, `openspec-verify-change`, `openspec-archive-change` |
+| В цепочке | `gh`, `ghpr`, `ghm`, `commit`, `grill-me`, `tdd`, `code-review`, `openspec-propose`, `openspec-apply-change`, `openspec-verify-change`, `openspec-archive-change` |
 | По ситуации | `openspec-update-change`, `openspec-sync-specs` |
-| Сами не вызываются | `grilling` — его читают `grill-me` и `grill-with-docs`; `domain-modeling` — `grill-with-docs`; `codebase-design` — `tdd` |
-| Не используем | Остальные скиллы `mattpocock/skills`: у проекта своя цепочка на OpenSpec. `setup-matt-pocock-skills` не нужен: `code-review` берёт трекер из `AGENTS.md`. `openspec-explore` — пока вместо него `grill-with-docs` |
+| Сами не вызываются | `grilling` — его читает `grill-me`; `codebase-design` — `tdd` |
+| Не используем | Остальные скиллы `mattpocock/skills`: у проекта своя цепочка на OpenSpec. `grill-with-docs` и `domain-modeling` — правила словаря, ADR и исследований свои, в репозитории. `setup-matt-pocock-skills` не нужен: `code-review` берёт трекер из `AGENTS.md`. `openspec-explore` — пока вместо него `grill-me` |
 
 ## Проверки и merge
 
