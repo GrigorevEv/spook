@@ -26,7 +26,7 @@ def test_topic_of_spaces_and_forbidden_characters_only_counts_as_no_topic(spook)
     spook.start_lecture(topic=' \t ?*"\\ ')
 
     assert note_names(spook) == ["2026-11-06 14-02 Лекция.md"]
-    assert 'class="topic"' not in spook.page().text
+    assert 'name="topic" value=""' in spook.page().text
 
 
 def test_long_topic_is_cut_to_80_characters(spook):
