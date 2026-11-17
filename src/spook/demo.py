@@ -54,6 +54,9 @@ class CyclingRecognizer:
         self._texts = itertools.cycle(texts)
         self._lock = threading.Lock()
 
+    def check_available(self) -> None:
+        pass
+
     def recognize(self, segment: AudioSegment) -> str:
         with self._lock:
             return next(self._texts)
