@@ -3,7 +3,7 @@ from __future__ import annotations
 from conftest import NOTE_AFTER_START, note_text, speech
 
 
-def test_slow_recognizer_loses_nothing_and_stop_waits_for_all_utterances_in_order(spook):
+def test_slow_recognizer_loses_nothing_and_note_ends_at_stop_not_when_queue_is_recognized(spook):
     spook.recognizer.say("Первая.", "Вторая.", "Третья.", "Четвёртая.", "Хвост.")
     spook.recognizer.hold()
     spook.start_lecture()
@@ -16,6 +16,7 @@ def test_slow_recognizer_loses_nothing_and_stop_waits_for_all_utterances_in_orde
         events.wait_for("state", containing="завершается")
         assert note_text(spook) == NOTE_AFTER_START
 
+        spook.clock.advance(7 * 60)
         spook.recognizer.release_all()
 
         events.wait_for("state", containing="нет Сессии")

@@ -489,8 +489,8 @@ class SessionService:
     def _begin_finishing(self, run: _Run, ended_at: datetime | None = None) -> None:
         self._cancel_auto_stop(run)
         self._cancel_activity(run)
-        run.ended_at = ended_at
-        run.alive_at = ended_at or self._clock.now()
+        run.ended_at = ended_at or self._clock.now()
+        run.alive_at = run.ended_at
         run.close_interval(run.alive_at)
         self._state = SessionState.FINISHING
         self._save(run)
