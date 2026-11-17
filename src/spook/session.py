@@ -22,7 +22,7 @@ from spook.cutting import SpeechDetectorFactory, UtteranceCutter
 from spook.note import Note, NoteNotFound, clean_link, clean_topic, find_session_note
 
 from spook.notify import send_notification
-from spook.recognizer import Recognizer
+from spook.recognizer import RecognitionUnavailable, Recognizer
 from spook.session_record import SessionRecord, SessionState, SessionStore
 from spook.settings import SessionKind, Settings
 from spook.transcript import DeviceMark, Entry, Mark, Paragraph, PauseMark, Transcript, Utterance, format_offset
@@ -240,10 +240,13 @@ class SessionService:
             started_at = self._clock.now()
             topic = clean_topic(topic)
             link = clean_link(link) if kind is SessionKind.LECTURE else ""
-            sources = {
-                source: _SourceRun(UtteranceCutter(source, settings.recognition, self._speech_detector()))
-                for source in SOURCES_BY_KIND[kind]
-            }
+            try:
+                sources = {
+                    source: _SourceRun(UtteranceCutter(source, settings.recognition, self._speech_detector()))
+                    for source in SOURCES_BY_KIND[kind]
+                }
+            except RecognitionUnavailable as error:
+                raise CommandRejected(str(error)) from error
             try:
                 note = Note.create(folder, started_at, kind, topic, link)
             except OSError as error:
