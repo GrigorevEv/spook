@@ -266,19 +266,21 @@ class SessionService:
             try:
                 self._start_captures(run)
             except CaptureUnavailable as error:
-                self._stop_captures_outside_lock(run)
                 note.path.unlink(missing_ok=True)
-                raise CommandRejected(str(error)) from error
-            self._run = run
-            self._state = SessionState.RUNNING
-            threading.Thread(
-                target=self._recognize_until_finished, args=(run,), name="spook-recognition", daemon=True
-            ).start()
-            self._schedule_auto_stop(run)
-            self._schedule_activity(run)
-            self._save(run)
-            self._publish(StateChanged(self.view()))
-            return self.view()
+                unavailable = error
+            else:
+                self._run = run
+                self._state = SessionState.RUNNING
+                threading.Thread(
+                    target=self._recognize_until_finished, args=(run,), name="spook-recognition", daemon=True
+                ).start()
+                self._schedule_auto_stop(run)
+                self._schedule_activity(run)
+                self._save(run)
+                self._publish(StateChanged(self.view()))
+                return self.view()
+        self._stop_captures_outside_lock(run)
+        raise CommandRejected(str(unavailable)) from unavailable
 
     def pause(self) -> SessionView:
         with self._lock:
@@ -311,19 +313,21 @@ class SessionService:
             try:
                 self._start_captures(run)
             except CaptureUnavailable as error:
-                self._stop_captures_outside_lock(run)
-                raise CommandRejected(str(error)) from error
-            now = self._clock.now()
-            mark = _pause_mark(run, resumed_at=now)
-            run.paused_at = None
-            run.open_interval(now)
-            run.last_speech_at = now
-            self._state = SessionState.RUNNING
-            run.queue_mark_after_segments(mark)
-            self._schedule_auto_stop(run)
-            self._save(run)
-            self._publish(StateChanged(self.view()))
-            return self.view()
+                unavailable = error
+            else:
+                now = self._clock.now()
+                mark = _pause_mark(run, resumed_at=now)
+                run.paused_at = None
+                run.open_interval(now)
+                run.last_speech_at = now
+                self._state = SessionState.RUNNING
+                run.queue_mark_after_segments(mark)
+                self._schedule_auto_stop(run)
+                self._save(run)
+                self._publish(StateChanged(self.view()))
+                return self.view()
+        self._stop_captures_outside_lock(run)
+        raise CommandRejected(str(unavailable)) from unavailable
 
     def stop(self) -> SessionView:
         with self._lock:
