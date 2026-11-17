@@ -16,6 +16,9 @@ MODEL_REPO = "istupakov/gigaam-v3-onnx"
 
 
 class Recognizer(Protocol):
+    def check_available(self) -> None:
+        ...
+
     def recognize(self, segment: AudioSegment) -> str:
         ...
 
@@ -25,6 +28,9 @@ class RecognitionUnavailable(Exception):
 
 
 class MissingRecognizer:
+    def check_available(self) -> None:
+        raise RecognitionUnavailable("Модель распознавания ещё не подключена")
+
     def recognize(self, segment: AudioSegment) -> str:
         raise RecognitionUnavailable("Модель распознавания ещё не подключена")
 
@@ -76,6 +82,12 @@ class GigaamRecognizer:
     def loaded(self) -> bool:
         return self._model is not None
 
+    def check_available(self) -> None:
+        if not model_is_present(self._settings):
+            raise RecognitionUnavailable(
+                f"Модель распознавания не скачана в {self._settings.model_dir}: выполните `spook prepare`"
+            )
+
     def recognize(self, segment: AudioSegment) -> str:
         if len(segment.samples) == 0:
             return ""
@@ -90,10 +102,7 @@ class GigaamRecognizer:
 
     def _load(self) -> Any:
         settings = self._settings
-        if not model_is_present(settings):
-            raise RecognitionUnavailable(
-                f"Модель распознавания не скачана в {settings.model_dir}: выполните `spook prepare`"
-            )
+        self.check_available()
         import onnx_asr
         import onnxruntime
 

@@ -1,10 +1,10 @@
 # Как работать в Spook
 
-Spook ведёт один человек вместе с агентами разработки (Claude Code, opencode, Codex…). Работа идёт от идеи в issue до merge, каждый шаг — скилл, который ты вызываешь сам, по имени. Правила для агентов — в `AGENTS.md`, правила кода — в `CODING_STANDARDS.md`, язык проекта — в `GLOSSARY.md`.
+Spook ведёт один человек вместе с агентами разработки (Claude Code, opencode, Codex…). Каждый шаг — скилл, который ты вызываешь сам. Правила для агентов — в `AGENTS.md`.
 
 ## После клона
 
-Файлы агентов (`.agents/`, `.claude/`, `.opencode/`) в git не хранятся: скиллы OpenSpec каждый создаёт у себя. Нужен OpenSpec 2.0 — та же версия, что в CI: он кладёт скиллы в `.agents/skills/`, а агенту, который эту папку не читает (Claude Code), ставит на них ссылки.
+Нужен OpenSpec 2.0, как в CI. Скиллы OpenSpec каждый создаёт у себя:
 
 ```bash
 openspec config set profile custom
@@ -12,71 +12,44 @@ openspec config set workflows '["propose","explore","apply","update","sync","arc
 openspec init --tools <агент>   # claude, opencode, codex…
 ```
 
-Первые две команды задают глобальный профиль OpenSpec: стандартный профиль `core` не создаёт `openspec-verify-change`. Остальные скиллы — глобальные, в `~/.agents/skills/` домашней папки.
+Остальные скиллы глобальные, лежат в `~/.agents/skills/`.
 
-## Метки
+## Путь задачи
 
-Единственный трекер — GitHub Issues. У каждого issue ровно одна метка типа, она решает, как делать работу:
+```mermaid
+flowchart TD
+    idea["Идея"] -->|"gh: заведи задачу"| issue["Issue с типом"]
+    issue --> open{"Есть открытые решения?"}
+    open -->|да| talk["grill-me или openspec-explore"]
+    open -->|нет| type{"Тип issue"}
+    talk --> type
 
-| Тип | Что это | Как делать |
-|---|---|---|
-| `feature` | Изменение поведения: новое, изменённое или удалённое | Цепочка OpenSpec — «Изменение поведения» ниже |
-| `bug` | Работает не так, как задумано | `tdd`: сначала тест, который воспроизводит баг, потом исправление → `ghpr` → `ghm`. Если в спеке не хватает требования — тип `feature` |
-| `chore` | Без изменения поведения: рефакторинг, CI, зависимости | Правка → `ghpr` → `ghm`, без OpenSpec |
-| `documentation` | Правка только документации | Правка → `ghpr` → `ghm`, без OpenSpec |
-| `research` | Вопрос, от ответа на который зависит код или поведение Spook | «Исследование» ниже |
-| `epic` | Работа больше чем на один PR | Делится на sub-issue, закрывается после них — «От идеи до merge» ниже |
+    type -->|feature| propose["openspec-propose"]
+    propose --> approve["прочитай proposal и дельты спек, commit"]
+    approve --> apply["новая сессия: tdd, openspec-apply-change"]
+    apply --> verify["openspec-verify-change"]
+    verify --> review["code-review"]
+    review --> archive["openspec-archive-change"]
+    archive --> pr["ghpr → ghm"]
 
-Поведение меняет только `feature`. `epic` заменяет тип: какая работа внутри, видно по его sub-issue, у каждой свой тип. `feature` делается одинаково — сама по себе или внутри `epic`.
+    type -->|bug| fix["tdd: тест на баг, потом исправление"]
+    fix --> pr
 
-Тип ставит агент разработки, когда заводит issue; отдельного этапа классификации нет. Чужому issue поставь тип сам.
+    type -->|"chore, documentation"| edit["правка"]
+    edit --> pr
 
-## От идеи до merge
+    type -->|research| research["статья по docs/research/README.md"]
+    research --> pr
 
-1. `gh`: «заведи задачу: …» — простыми словами, что хочешь и зачем, без решений. Агент разработки выбирает тип и шаблон.
-2. Есть открытые решения — `grill-me #N`. Когда ты подтвердил итог, агент разработки записывает термины и ADR по правилам `AGENTS.md`, а сводку интервью — комментарием в #N. Вопросы, которым нужно исследование, он не исследует, а отмечает в сводке. Хватит одного PR — дальше по типу, в той же сессии. Больше одного PR или нужно исследование — тип #N меняется на `epic`.
-3. `epic` — «разбей #N на sub-issue». Каждая sub-issue — одно изменение OpenSpec (одна ветка, один PR с `Fixes`), одно исследование или одна правка без OpenSpec. Исследования — отдельные sub-issue `research`; задачи, которые ждут ответа, заблокированы ими. Правила разбиения — в `AGENTS.md`. Закрылась последняя sub-issue — закрывается и #N.
-4. Новая сессия берёт sub-issue и ведёт её по типу, без `grill-me`. Параллельная работа — каждая ветка в своём worktree.
+    type -->|epic| split["разбей на sub-issue"]
+    split -.->|"каждая sub-issue в новой сессии"| type
+```
 
-`tasks.md` изменения OpenSpec — чек-лист одного PR, а не трекер. `openspec-propose` делает ровно одно изменение и задачи не разбивает.
+- Тип ставит агент разработки, когда заводит issue. После обсуждения задача больше чем на один PR становится `epic`.
+- `grill-me` — когда варианты понятны и решения надо принять. `openspec-explore` — когда задачу ещё надо понять.
+- Работаешь параллельно — каждая ветка в своём worktree.
 
-## Изменение поведения (`feature`)
+## Merge
 
-| # | Что сделать | Что получится |
-|---|---|---|
-| 1 | Ветка `<N>-<change>`, `openspec-propose <change>` | `proposal.md`, дельты спек, `design.md`, `tasks.md` |
-| 2 | Прочитать `proposal.md` и дельты, `commit` | План согласован до кода |
-| 3 | Новая сессия, `tdd`, `openspec-apply-change <change>` | Код, отмеченные задачи |
-| 4 | `openspec-verify-change <change>` | Код соответствует спеке |
-| 5 | `code-review main openspec/changes/<change>` | Замечания исправлены |
-| 6 | `openspec-archive-change <change>`, `ghpr` | Спеки обновлены, изменение в архиве, PR открыт, CI зелёный |
-| 7 | `ghm` | PR влит, issue закрыт, ветка удалена |
-
-Спеки и код попадают в `main` одним PR: архивация — его последний коммит.
-
-## Исследование (`research`)
-
-| # | Что сделать | Что получится |
-|---|---|---|
-| 1 | Ветка `<N>-<slug>`, исследование по `docs/research/README.md` | Статья `docs/research/<slug>.md`; решение по ней — ADR |
-| 2 | `ghpr` → `ghm` | Issue закрыт, задачи, которые ждали ответа, больше не заблокированы |
-
-## Интервью: `grill-me`
-
-`grill-me` расспрашивает, пока все решения не приняты. Когда ты подтвердил итог, агент разработки по правилам `AGENTS.md` записывает новые термины в `GLOSSARY.md`, решения — в `docs/adr/`, сводку интервью — комментарием в issue. Вопросы, которым нужно исследование, становятся sub-issue `research`, их не исследуют по ходу интервью. Записывается только то, от чего зависит код или поведение Spook; правила — в конце `GLOSSARY.md` и в `docs/adr/README.md`.
-
-## Скиллы
-
-| Когда | Скиллы |
-|---|---|
-| В цепочке | `gh`, `ghpr`, `ghm`, `commit`, `grill-me`, `tdd`, `code-review`, `openspec-propose`, `openspec-apply-change`, `openspec-verify-change`, `openspec-archive-change` |
-| По ситуации | `openspec-update-change`, `openspec-sync-specs` |
-| Сами не вызываются | `grilling` — его читает `grill-me`; `codebase-design` — `tdd` |
-| Не используем | Остальные скиллы `mattpocock/skills`: у проекта своя цепочка на OpenSpec. `grill-with-docs` и `domain-modeling` — правила словаря, ADR и исследований свои, в репозитории. `setup-matt-pocock-skills` не нужен: `code-review` берёт трекер из `AGENTS.md`. `openspec-explore` — пока вместо него `grill-me` |
-
-## Проверки и merge
-
-- CI на каждый PR: быстрые тесты и `openspec validate --all --strict`.
-- В `main` — только через PR с зелёным CI и только squash.
-- Вливай через `ghm`: он собирает сообщение squash-коммита из коммитов ветки, без повторов трейлеров. Кнопка на сайте подставит сообщения коммитов как есть, с повторами.
-- Апрув не нужен: GitHub не даёт одобрить свой PR.
+- В `main` попадают только PR с зелёным CI, через squash. Апрув не нужен.
+- Вливай через `ghm`, а не кнопкой на сайте: кнопка повторит трейлеры в сообщении коммита.

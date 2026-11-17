@@ -124,6 +124,9 @@ class ScriptedRecognizer:
             self._held = False
             self._gate.notify_all()
 
+    def check_available(self) -> None:
+        pass
+
     def recognize(self, segment: AudioSegment) -> str:
         with self._gate:
             while self._held and self._passes == 0:
