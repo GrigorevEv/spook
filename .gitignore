@@ -16,8 +16,9 @@ tmp/
 test-results/
 playwright-report/
 
-# Файлы агентов разработки: каждый создаёт их у себя (CONTRIBUTING.md, «После клона»),
-# в git их не храним
-.agents/
+# Файлы агентов разработки: в git только скиллы .agents/skills/ (CONTRIBUTING.md,
+# «После клона»), остальное каждый настраивает у себя
+.agents/*
+!.agents/skills/
 .claude/
 .opencode/

@@ -1,24 +1,25 @@
 # Как работать в Spook
 
-Spook ведёт один человек вместе с агентами разработки (Claude Code, opencode, Codex…). Каждый шаг — скилл, который ты вызываешь сам. Правила для агентов — в `AGENTS.md`.
+Spook ведёт один человек вместе с агентами разработки (Claude Code, opencode, Codex…). Каждый шаг — скилл: агент выбирает его сам по тому, о чём ты просишь. Правила для агентов — в `AGENTS.md`.
 
 ## После клона
 
-Нужен OpenSpec 2.0, как в CI. Скиллы OpenSpec каждый создаёт у себя:
+Скиллы агентов разработки приходят с клоном, в `.agents/skills/`: OpenSpec, `grill-me`, `tdd`, `code-review` и `git` — коммит, push, PR, merge и issue. opencode и Codex читают эту папку сами. Claude Code — нет: поставь у себя ссылки `.claude/skills/<имя> -> ../../.agents/skills/<имя>`. Глобальный скилл с тем же именем в `~/.claude/skills/` перекрывает проектный.
+
+Нужен OpenSpec 2.0, как в CI. Скиллы OpenSpec обновляет `openspec update`, изменения коммитятся. Перед ним задай профиль, иначе он удалит `openspec-verify-change`:
 
 ```bash
 openspec config set profile custom
 openspec config set workflows '["propose","explore","apply","update","sync","archive","verify"]'
-openspec init --tools <агент>   # claude, opencode, codex…
 ```
 
-Остальные скиллы глобальные, лежат в `~/.agents/skills/`.
+OpenSpec 2.1 и новее по умолчанию ставит скиллы глобально — при переходе на него оставь их в проекте.
 
 ## Путь задачи
 
 ```mermaid
 flowchart TD
-    idea["Идея"] -->|"gh: заведи задачу"| issue["Issue с типом"]
+    idea["Идея"] -->|"заведи задачу"| issue["Issue с типом"]
     issue --> open{"Есть открытые решения?"}
     open -->|да| talk["grill-me или openspec-explore"]
     open -->|нет| type{"Тип issue"}
@@ -30,7 +31,7 @@ flowchart TD
     apply --> verify["openspec-verify-change"]
     verify --> review["code-review"]
     review --> archive["openspec-archive-change"]
-    archive --> pr["ghpr → ghm"]
+    archive --> pr["git: PR → merge"]
 
     type -->|bug| fix["tdd: тест на баг, потом исправление"]
     fix --> pr
@@ -52,4 +53,4 @@ flowchart TD
 ## Merge
 
 - В `main` попадают только PR с зелёным CI, через squash. Апрув не нужен.
-- Вливай через `ghm`, а не кнопкой на сайте: кнопка повторит трейлеры в сообщении коммита.
+- Вливай через скилл `git` («влей PR»), а не кнопкой на сайте: кнопка повторит трейлеры в сообщении коммита.
