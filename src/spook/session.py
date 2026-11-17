@@ -22,7 +22,7 @@ from spook.cutting import SpeechDetectorFactory, UtteranceCutter
 from spook.note import Note, NoteNotFound, clean_link, clean_topic, find_session_note
 
 from spook.notify import send_notification
-from spook.recognizer import Recognizer
+from spook.recognizer import RecognitionUnavailable, Recognizer
 from spook.session_record import SessionRecord, SessionState, SessionStore
 from spook.settings import SessionKind, Settings
 from spook.transcript import DeviceMark, Entry, Mark, Paragraph, PauseMark, Transcript, Utterance, format_offset
@@ -235,6 +235,10 @@ class SessionService:
         with self._lock:
             if self._state is not SessionState.NONE:
                 raise CommandRejected(f"Сессия уже {self._state.label}")
+            try:
+                self._recognizer.check_available()
+            except RecognitionUnavailable as error:
+                raise CommandRejected(str(error)) from error
             settings = self._load_settings()
             folder = settings.for_kind(kind).folder
             started_at = self._clock.now()
