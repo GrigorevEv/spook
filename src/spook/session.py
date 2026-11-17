@@ -244,10 +244,13 @@ class SessionService:
             started_at = self._clock.now()
             topic = clean_topic(topic)
             link = clean_link(link) if kind is SessionKind.LECTURE else ""
-            sources = {
-                source: _SourceRun(UtteranceCutter(source, settings.recognition, self._speech_detector()))
-                for source in SOURCES_BY_KIND[kind]
-            }
+            try:
+                sources = {
+                    source: _SourceRun(UtteranceCutter(source, settings.recognition, self._speech_detector()))
+                    for source in SOURCES_BY_KIND[kind]
+                }
+            except RecognitionUnavailable as error:
+                raise CommandRejected(str(error)) from error
             try:
                 note = Note.create(folder, started_at, kind, topic, link)
             except OSError as error:

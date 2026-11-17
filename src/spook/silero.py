@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 
 from spook.audio import SAMPLE_RATE
+from spook.recognizer import RecognitionUnavailable
 from spook.settings import data_dir
 
 FRAME_SAMPLES = 512
@@ -56,8 +57,6 @@ def model_is_present(model_dir: Path | None = None) -> bool:
 
 
 def prepare_model(model_dir: Path | None = None) -> bool:
-    from spook.recognizer import RecognitionUnavailable
-
     target = model_dir or default_model_dir()
     if model_is_present(target):
         return False
@@ -81,10 +80,8 @@ def prepare_model(model_dir: Path | None = None) -> bool:
 def load_model(model_dir: Path) -> Any:
     import onnxruntime
 
-    if not (model_dir / MODEL_FILE).is_file():
-        import onnx_asr
-
-        onnx_asr.load_vad("silero", model_dir)
+    if not model_is_present(model_dir):
+        raise RecognitionUnavailable(f"Модель детектора речи не скачана в {model_dir}: выполните `spook prepare`")
     options = onnxruntime.SessionOptions()
     options.intra_op_num_threads = 1
     options.inter_op_num_threads = 1
