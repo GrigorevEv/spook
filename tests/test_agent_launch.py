@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from conftest import agent_model_and_effort, speech
+from wisp_page import read_page
 
-NOTE_NAME = "2026-11-06 14-02 Встреча"
+NOTE_FILE = "2026-11-06-14-02-vstrecha.html"
 
 
 def run_agent(spook, scenario: str = "summary", until: str = "готово"):
@@ -20,7 +20,8 @@ def run_agent(spook, scenario: str = "summary", until: str = "готово"):
 
 
 def journal(spook) -> str:
-    return (spook.state_dir / "agent" / "meeting" / f"{NOTE_NAME}.log").read_text(encoding="utf-8")
+    [note] = spook.pages()
+    return (spook.state_dir / "agent" / "meeting" / f"{note.stem}.log").read_text(encoding="utf-8")
 
 
 def test_codex_receives_data_through_stdin_and_runs_in_a_temporary_folder(spook):
@@ -31,7 +32,7 @@ def test_codex_receives_data_through_stdin_and_runs_in_a_temporary_folder(spook)
     assert "exec" in args and args[-1] == "-"
     assert "--json" in args and "--ephemeral" in args and "--no-daemon" in args
     assert agent_model_and_effort(call) == ("gpt-6.2-astra", "high")
-    assert set(call["input"]) == {"skill", "date", "topic", "transcript", "terms_dictionary", "vault_notes", "wiki_notes"}
+    assert set(call["input"]) == {"skill", "date", "topic", "transcript", "terms_dictionary", "wisp_notes"}
     schema = call["schema"]
     assert schema["type"] == "object" and schema["additionalProperties"] is False
     assert set(schema["required"]) == {"summary", "topic"}
@@ -81,19 +82,18 @@ def test_missing_skill_keeps_note_and_reports_error_before_starting_codex(spook)
 
     assert "Не удалось прочитать Скилл absent" in result.data
     assert spook.agent.calls() == []
-    note = spook.meetings_dir / f"{NOTE_NAME}.md"
-    assert "## Суть" not in note.read_text(encoding="utf-8")
-    assert note.read_text(encoding="utf-8").endswith("**14:02 Собеседники:** Реплика.\n")
+    [note] = spook.pages()
+    assert not read_page(note).summary
+    assert read_page(note).transcript == "14:02 Собеседники: Реплика."
 
 
-def test_journal_keeps_codex_events_and_stderr(spook):
+def test_journal_records_event_names_and_a_safe_failure_reason(spook):
     run_agent(spook, "fail", until="ошибка")
 
     text = journal(spook)
-    events = [json.loads(line) for line in text.splitlines() if line.startswith("{")]
-    assert [event["type"] for event in events][:2] == ["thread.started", "turn.started"]
-    assert "--- stderr ---\nСценарий: Агент упал." in text
-    assert text.endswith("Код возврата: 1. Выжимка: ошибка — Сценарий: Агент упал.\n")
+    assert "thread.started\nturn.started\n" in text
+    assert "Сценарий: Агент упал." not in text
+    assert text.endswith("Код возврата: 1. Выжимка: ошибка — Codex завершился с кодом 1\n")
 
 
 def test_launch_can_be_wrapped_by_command_from_settings_with_timeout_in_seconds(spook):

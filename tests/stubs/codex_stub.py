@@ -50,6 +50,8 @@ def main() -> int:
         reply = {"summary": SUMMARY, "topic": TOPIC if scenario == "topic" else ""}
         if scenario == "wait-updated":
             reply["summary"] = "## Суть\n\nВыжимка обновлена."
+        if scenario == "html-summary":
+            reply["summary"] = "## Суть\n\n<mark>Текст разговора</mark> и [план](plan-reliza.html)."
         if scenario == "empty":
             reply["summary"] = ""
         if scenario == "reserved-heading":

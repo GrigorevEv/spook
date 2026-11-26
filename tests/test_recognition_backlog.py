@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from conftest import NOTE_AFTER_START, note_text, speech
+from conftest import speech
 
 
 def test_slow_recognizer_loses_nothing_and_note_ends_at_stop_not_when_queue_is_recognized(spook):
@@ -14,7 +14,7 @@ def test_slow_recognizer_loses_nothing_and_note_ends_at_stop_not_when_queue_is_r
         response = spook.stop()
         assert response.status_code == 200, response.text
         events.wait_for("state", containing="завершается")
-        assert note_text(spook) == NOTE_AFTER_START
+        assert spook.note_page().transcript == ""
 
         spook.clock.advance(7 * 60)
         spook.recognizer.release_all()
@@ -22,17 +22,13 @@ def test_slow_recognizer_loses_nothing_and_note_ends_at_stop_not_when_queue_is_r
         events.wait_for("state", containing="нет Сессии")
 
     assert [heard.start for heard in spook.recognizer.heard] == [0.0, 20.0, 40.0, 60.0, 80.0]
-    assert note_text(spook) == (
-        "---\n"
-        "date: 2026-11-06\n"
-        'start: "14:02"\n'
-        'end: "14:03"\n'
-        "tags: [встреча]\n"
-        "---\n"
-        "\n"
-        "## Транскрипт\n"
-        "\n**14:02 Собеседники:** Первая. Вторая. Третья. Четвёртая. Хвост.\n"
-    )
+    page = spook.note_page()
+    assert page.properties["date"] == "2026-11-06"
+    assert page.properties["start"] == "14:02"
+    assert page.properties["end"] == "14:03"
+    assert page.meta["tags"] == ["встреча"]
+    assert page.transcript == "14:02 Собеседники: Первая. Вторая. Третья. Четвёртая. Хвост."
+    assert page.summary == ""
 
 
 def test_backlog_is_shown_only_while_a_segment_waits_behind_the_one_being_recognized(spook):

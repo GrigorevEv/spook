@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from conftest import note_text
 from test_agent_block import ShownJob, jobs_on_screen
 from test_agent_launch import journal, run_agent
 
@@ -49,15 +48,16 @@ def test_unusable_reply_reports_the_reason_and_preserves_the_transcript(spook, s
     run_agent(spook, scenario, until="ошибка")
 
     assert jobs_on_screen(spook) == {NOTE_NAME: ShownJob("ошибка", reason)}
-    assert "## Суть" not in note_text(spook)
-    assert note_text(spook).endswith("**14:02 Собеседники:** Реплика.\n")
+    page = spook.note_page()
+    assert not page.summary
+    assert page.transcript == "14:02 Собеседники: Реплика."
 
 
 @pytest.mark.parametrize(
     ("scenario", "reason"),
     [
         ("no-network", "Нет сети"), ("rate-limit", "Исчерпан лимит подписки"),
-        ("error-after-summary", "Сбой после ответа"),
+        ("error-after-summary", "Codex завершился с кодом 1"),
     ],
 )
 def test_failed_turn_reports_reason_in_screen_and_journal_and_leaves_note_intact(spook, scenario, reason):
@@ -65,8 +65,9 @@ def test_failed_turn_reports_reason_in_screen_and_journal_and_leaves_note_intact
 
     assert jobs_on_screen(spook) == {NOTE_NAME: ShownJob("ошибка", reason)}
     assert journal(spook).endswith(f"Код возврата: 1. Выжимка: ошибка — {reason}\n")
-    assert "## Суть" not in note_text(spook)
-    assert note_text(spook).endswith("**14:02 Собеседники:** Реплика.\n")
+    page = spook.note_page()
+    assert not page.summary
+    assert page.transcript == "14:02 Собеседники: Реплика."
 
 
 def test_unsent_notification_leaves_outcome_done(spook, caplog):

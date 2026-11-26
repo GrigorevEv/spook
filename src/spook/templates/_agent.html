@@ -7,11 +7,11 @@
   {% if job.state.value == "failed" %}<p class="hint">Перезапустить Агента можно на экране <a href="/notes">«Заметки»</a></p>{% endif %}
   {% if job.warning %}<p class="warning">{{ job.warning }}</p>{% endif %}
   <div class="links">
-    <form hx-post="/notes/obsidian" hx-target="#notice" hx-swap="innerHTML">
+    <form hx-post="/notes/wisp" hx-target="#notice" hx-swap="innerHTML">
       <input type="hidden" name="note" value="{{ job.job.note_path }}">
-      <button type="submit">Открыть в Obsidian</button>
+      <button type="submit">Открыть в Wisp</button>
     </form>
-    {% if job.has_log %}<a href="/agent/log?note={{ job.note_name|urlencode }}&amp;kind={{ job.job.kind.value }}">Журнал</a>{% endif %}
+    {% if job.has_log %}<a href="/agent/log?note={{ job.job.note_path.stem|urlencode }}&amp;kind={{ job.job.kind.value }}">Журнал</a>{% endif %}
   </div>
 </div>
 {% endfor %}

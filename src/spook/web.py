@@ -145,15 +145,15 @@ def create_app(
             agent_choices=notes_module.agent_choices(settings),
         )
 
-    @app.post("/notes/obsidian", response_class=HTMLResponse)
-    def open_in_obsidian(note: str = Form("")) -> HTMLResponse:
+    @app.post("/notes/wisp", response_class=HTMLResponse)
+    def open_in_wisp(note: str = Form("")) -> HTMLResponse:
         settings = load_settings()
         try:
             path, _ = notes_module.find_note(settings, note)
-            notes_module.open_uri(settings.programs.open, notes_module.obsidian_uri(path))
+            notes_module.open_uri(settings.programs.open, path.as_uri())
         except notes_module.NoteRefused as refused:
             return _rejected(render, str(refused))
-        return HTMLResponse(render("_done.html", text=f"Открываю в Obsidian: {path.stem}"))
+        return HTMLResponse(render("_done.html", text=f"Открываю в Wisp: {path.name}"))
 
     @app.post("/notes/agent", response_class=HTMLResponse)
     def run_agent(

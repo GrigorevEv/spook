@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import unquote
 
 import pytest
 from playwright.sync_api import Page, expect
@@ -47,7 +46,7 @@ def test_meeting_from_start_to_stop_on_demo_launch(demo, page, screenshot):
     screenshot(page, "после-стоп")
 
 
-def test_meeting_from_start_through_pause_to_summary_and_opening_note_in_obsidian(spook, page, screenshot):
+def test_meeting_from_start_through_pause_to_summary_and_opening_note_in_wisp(spook, page, screenshot):
     spook.agent.play("summary")
     spook.recognizer.say("Коллеги, всем привет.", "Привет, начинаем.")
     spook.recognizer.say("Хорошо, продолжаем.")
@@ -88,13 +87,12 @@ def test_meeting_from_start_through_pause_to_summary_and_opening_note_in_obsidia
     text = live_text_of(page).inner_text()
     assert [text.count(said) for said in ("Коллеги, всем привет.", "Привет, начинаем.", "Хорошо, продолжаем.")] == [1, 1, 1]
 
-    agent.get_by_role("button", name="Открыть в Obsidian").click()
+    agent.get_by_role("button", name="Открыть в Wisp").click()
 
-    expect(page.get_by_role("alert").filter(has_text="Открываю в Obsidian")).to_contain_text("2026-11-06 14-02 Планёрка")
-    note = spook.meetings_dir / "2026-11-06 14-02 Планёрка.md"
-    [[uri]] = [call["argv"] for call in spook.opener.calls()]
-    assert uri.startswith("obsidian://open?path=%2F") and unquote(uri.removeprefix("obsidian://open?path=")) == str(note)
-    assert "Про тесты." in note.read_text(encoding="utf-8")
+    [note] = spook.pages()
+    expect(page.get_by_role("alert").filter(has_text="Открываю в Wisp")).to_contain_text(note.name)
+    assert [call["argv"] for call in spook.opener.calls()] == [[note.as_uri()]]
+    assert "Про тесты." in spook.note_page().summary
 
 
 def test_closing_all_tabs_keeps_session_and_new_tab_shows_everything(spook, context, screenshot):

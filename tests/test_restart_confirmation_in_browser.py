@@ -4,6 +4,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from test_notes_screen import write_note
+from wisp_page import read_page
 
 pytestmark = pytest.mark.browser
 
@@ -18,7 +19,7 @@ def row_of(page: Page, topic: str):
 
 def test_restart_form_shows_warning_and_is_not_sent_until_confirmation_is_checked(spook, page, screenshot):
     note = write_note(
-        spook.meetings_dir, "2026-11-05 10-00 Репликация в Raft", "2026-11-05", "10:00", "11:05", "встреча", "## Суть\n\nПро Raft."
+        spook.meetings_dir, "2026-11-05", "10:00", "11:05", "Репликация в Raft", summary="<h2>Суть</h2>\n<p>Про Raft.</p>"
     )
     spook.agent.play("wait")
     sent = []
@@ -42,4 +43,4 @@ def test_restart_form_shows_warning_and_is_not_sent_until_confirmation_is_checke
     assert sent == [f"{spook.base_url}/notes/agent"]
     [call] = spook.agent.calls()
     assert call["input"]["topic"] == "Репликация в Raft"
-    assert "## Суть" in note.read_text(encoding="utf-8")
+    assert "Про тесты." in read_page(note).summary

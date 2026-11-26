@@ -42,7 +42,7 @@ def test_command_from_foreign_page_is_rejected_and_session_does_not_start(spook,
     assert response.status_code == 403
     assert response.text == "Запрос с чужой страницы отклонён"
     assert "нет Сессии" in spook.page().text
-    assert not spook.meetings_dir.exists()
+    assert not spook.pages() and not list(spook.drafts_dir.glob("*.html"))
 
 
 @pytest.mark.parametrize("name", ["localhost", "127.0.0.1"])

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import os
 import re
 import subprocess
 from dataclasses import dataclass, replace
 from pathlib import Path
-from urllib.parse import quote
 
 from spook.agent import AgentJob, AgentQueue, SummaryState
-from spook.note import Note, NoteNotFound, find_session_note, has_lecture_tag, parse_name, read_properties
+from spook.note import Note, NoteNotFound, find_session_note, note_properties
 from spook.settings import EFFORTS, MODELS, SessionKind, Settings, codex_model
 
 _TIME = re.compile(r"^(\d{1,2}):(\d{2})$")
@@ -35,7 +33,7 @@ class NoteEntry:
 
     @property
     def name(self) -> str:
-        return self.path.stem
+        return Note(self.path).name
 
     @property
     def agent_busy(self) -> bool:
@@ -54,10 +52,6 @@ def find_note(settings: Settings, raw: str) -> tuple[Path, SessionKind]:
         return find_session_note(raw, settings.kind_folders())
     except NoteNotFound as error:
         raise NoteRefused(str(error)) from error
-
-
-def obsidian_uri(path: Path) -> str:
-    return "obsidian://open?path=" + quote(str(path), safe="")
 
 
 def open_uri(program: str, uri: str) -> None:
@@ -135,39 +129,32 @@ def _with(options: tuple[str, ...], value: str) -> tuple[str, ...]:
 
 def list_notes(settings: Settings, agent: AgentQueue, session_note: Path | None = None) -> list[NoteEntry]:
     entries: list[NoteEntry] = []
-    seen: set[Path] = set()
-    for kind in SessionKind:
-        folder = settings.for_kind(kind).folder
-        try:
-            files = sorted(folder.iterdir())
-        except OSError:
+    folder = settings.wisp / "html"
+    try:
+        files = list(folder.glob("[0-9][0-9][0-9][0-9]-*.html"))
+    except OSError:
+        files = []
+    if session_note is not None and Note(session_note).is_draft:
+        files.append(session_note)
+    for path in files:
+        if path.name == "index.html" or path.is_symlink() or not path.is_file():
             continue
-        for path in files:
-            if path.suffix != ".md" or parse_name(path.stem) is None or not path.is_file():
-                continue
-            if path.resolve().parent != folder.resolve() or path.resolve() in seen:
-                continue
-            seen.add(path.resolve())
-            entry = describe(path, kind, agent, session_note)
-            if entry is not None:
-                entries.append(entry)
+        entry = describe(path, SessionKind.MEETING, agent, session_note)
+        if entry is not None:
+            entries.append(entry)
     return sorted(entries, key=lambda entry: (entry.started, entry.name), reverse=True)
 
 
 def describe(path: Path, folder_kind: SessionKind, agent: AgentQueue, session_note: Path | None = None) -> NoteEntry | None:
-    name = parse_name(path.stem)
-    if name is None:
-        return None
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return None
-    properties = read_properties(text)
-    if has_lecture_tag(properties):
-        return None
-    start = properties.get("start") or f"{name.hour}:{name.minute}"
     note = Note(path)
-    has_summary = bool(_summary(note))
+    try:
+        properties = note_properties(note.read())
+        if not properties:
+            return None
+        has_summary = bool(note.summary())
+    except (OSError, UnicodeError):
+        return None
+    start = properties["start"]
     job = agent.job_for(path)
     if job is not None:
         summary, message, warning = job.state, job.message, job.warning
@@ -176,8 +163,8 @@ def describe(path: Path, folder_kind: SessionKind, agent: AgentQueue, session_no
     return NoteEntry(
         path=path,
         kind=folder_kind,
-        started=f"{properties.get('date') or name.date} {start}",
-        topic=name.rest if name.has_topic else "",
+        started=f"{properties['date']} {start}",
+        topic=properties["topic"],
         duration=_duration(start, properties.get("end", "")),
         summary=summary,
         message=message,

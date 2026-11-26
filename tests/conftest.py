@@ -20,11 +20,14 @@ import uvicorn
 from spook.audio import AudioInput, Source
 from spook.clock import ManualClock
 from spook.cutting import SpeechDetectorFactory
+from spook.demo import demo_wisp
 from spook.fakes import FakeAudioInput, LoudnessSpeechDetector, ScriptedRecognizer
 from spook.recognizer import Recognizer
 from spook.serve import make_server
 from spook.settings import Settings, load_settings
 from spook.web import create_app
+
+from wisp_page import MeetingPage, read_page
 
 pytest_plugins = ("chrome",)
 
@@ -32,20 +35,6 @@ SAMPLE_RATE = 16_000
 NO_SPEECH = ""
 SESSION_START = datetime(2026, 11, 6, 14, 2, tzinfo=timezone(timedelta(hours=3)))
 STUBS_DIR = Path(__file__).parent / "stubs"
-
-NOTE_AFTER_START = (
-    "---\n"
-    "date: 2026-11-06\n"
-    'start: "14:02"\n'
-    "tags: [встреча]\n"
-    "---\n"
-    "\n"
-    "## Транскрипт\n"
-)
-
-
-def note_text(spook: "Service") -> str:
-    return (spook.meetings_dir / "2026-11-06 14-02 Встреча.md").read_text(encoding="utf-8")
 
 
 def agent_model_and_effort(call: dict) -> tuple[str, str]:
@@ -150,8 +139,7 @@ class Service:
     base_url: str
     settings: Settings
     settings_path: Path
-    wiki_dir: Path
-    meetings_dir: Path
+    wisp_dir: Path
     state_dir: Path
     skills_dir: Path
     audio: AudioInput
@@ -165,21 +153,44 @@ class Service:
     restart_service: Callable[[float], None] = field(repr=False)
 
     @property
+    def meetings_dir(self) -> Path:
+        return self.wisp_dir / "html"
+
+    @property
+    def drafts_dir(self) -> Path:
+        return self.wisp_dir / ".spook"
+
+    def pages(self) -> list[Path]:
+        return [
+            path for path in sorted(self.meetings_dir.glob("*.html"))
+            if path.name != "index.html" and not path.is_symlink() and read_page(path).properties
+        ]
+
+    def current_note(self) -> Path:
+        drafts = list(self.drafts_dir.glob("*.html"))
+        if drafts:
+            assert len(drafts) == 1, drafts
+            return drafts[0]
+        return self.pages()[-1]
+
+    def note_page(self) -> MeetingPage:
+        return read_page(self.current_note())
+
+    @property
     def programs(self) -> dict[str, str]:
         return {
-            "codex": str(self.agent.path),
+            "codex": self.settings.programs.codex,
             "notify": str(self.notify.path),
             "open": str(self.opener.path),
         }
 
     def write_settings(self, **overrides) -> None:
         overrides.setdefault("agent", {}).setdefault("skills_dir", str(self.skills_dir))
-        overrides.setdefault("meetings_dir", self.meetings_dir)
+        overrides.setdefault("wisp", self.wisp_dir)
         overrides.setdefault("terms_dictionary", self.settings.terms_dictionary)
         write_settings(
             self.settings_path,
             self.settings.port,
-            wiki_dir=self.wiki_dir,
             programs=self.programs,
             **overrides,
         )
@@ -220,8 +231,7 @@ class Service:
 def write_settings(
     path: Path,
     port: int,
-    wiki_dir: Path,
-    meetings_dir: Path,
+    wisp: Path,
     max_utterance_seconds: float | None = None,
     auto_stop_minutes: float | None = None,
     programs: dict[str, str] | None = None,
@@ -244,12 +254,11 @@ def write_settings(
     agent_section = f"\n[agent]\n{agent_lines}" if agent_lines else ""
     path.write_text(
         f"port = {port}\n"
-        f'wiki = "{wiki_dir}"\n'
+        f'wisp = "{wisp}"\n'
         f"{auto_stop}"
         f"{terms}"
         "\n"
         "[meeting]\n"
-        f'folder = "{meetings_dir}"\n'
         f"{meeting_lines}"
         f"{recognition_section}"
         f"{agent_section}"
@@ -276,33 +285,42 @@ def recognizer() -> Recognizer:
 
 
 @pytest.fixture
+def agent_stub(tmp_path: Path) -> StubProgram:
+    return StubProgram.create(tmp_path / "stubs", "codex")
+
+
+@pytest.fixture
+def codex_program(agent_stub: StubProgram, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    return agent_stub.path
+
+
+@pytest.fixture
 def spook(
     tmp_path: Path,
+    agent_stub: StubProgram,
+    codex_program: Path,
     audio_input: AudioInput,
     recognizer: Recognizer,
     speech_detector: SpeechDetectorFactory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[Service]:
     settings_path = tmp_path / "config" / "spook" / "settings.toml"
-    wiki_dir = tmp_path / "wiki"
-    meetings_dir = tmp_path / "notes" / "работа"
+    wisp_dir = demo_wisp(tmp_path / "wisp")
     state_dir = tmp_path / "state" / "spook"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     skills_dir = tmp_path / "skills"
     skill = Path(__file__).resolve().parents[1] / "skills" / "spook-meeting"
     shutil.copytree(skill, skills_dir / skill.name)
-    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
-    agent = StubProgram.create(tmp_path / "stubs", "codex")
     notify = StubProgram.create(tmp_path / "stubs", "notify")
     opener = StubProgram.create(tmp_path / "stubs", "open")
-    programs = {"codex": str(agent.path), "notify": str(notify.path), "open": str(opener.path)}
+    programs = {"codex": str(codex_program), "notify": str(notify.path), "open": str(opener.path)}
     write_settings(
         settings_path,
         free_port(),
-        wiki_dir=wiki_dir,
         programs=programs,
-        meetings_dir=meetings_dir,
-        terms_dictionary=meetings_dir.parent / "Словарь терминов.md",
+        wisp=wisp_dir,
+        terms_dictionary=tmp_path / "Словарь терминов.md",
         agent={"skills_dir": str(skills_dir)},
     )
     settings = load_settings(settings_path)
@@ -310,10 +328,12 @@ def spook(
     def load_stubbed_settings() -> Settings:
         loaded = load_settings(settings_path)
         programs = loaded.programs
-        for program in (programs.codex, programs.notify, programs.open):
+        assert Path(programs.codex) == codex_program, f"неверная программа Codex: {programs.codex}"
+        for program in (programs.notify, programs.open):
             assert Path(program).is_relative_to(tmp_path), f"внешняя программа вне заглушек: {program}"
         assert loaded.terms_dictionary.is_relative_to(tmp_path), "Словарь терминов вне временного каталога"
         assert loaded.agent.skills_dir.is_relative_to(tmp_path), "Скиллы вне временного каталога"
+        assert loaded.wisp.is_relative_to(tmp_path), "Хранилище вне временной папки"
         return loaded
 
     def build_app(audio: AudioInput, recognizer: Recognizer, clock: ManualClock):
@@ -367,14 +387,13 @@ def spook(
             base_url=f"http://127.0.0.1:{settings.port}",
             settings=settings,
             settings_path=settings_path,
-            wiki_dir=wiki_dir,
-            meetings_dir=meetings_dir,
+            wisp_dir=wisp_dir,
             state_dir=state_dir,
             skills_dir=skills_dir,
             audio=audio,
             recognizer=recognizer,
             clock=clock,
-            agent=agent,
+            agent=agent_stub,
             notify=notify,
             opener=opener,
             http=http,

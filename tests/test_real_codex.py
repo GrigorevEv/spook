@@ -7,15 +7,18 @@ from pathlib import Path
 
 import pytest
 
+from test_meeting_agent_context import wisp_article
+from test_notes_screen import write_note
+from wisp_page import read_page
+
 pytestmark = pytest.mark.codex
 
-PROPERTIES = '---\ndate: 2026-11-04\nstart: "14:00"\nend: "14:05"\ntags: [встреча]\n---\n'
 TRANSCRIPT = (
-    "## Транскрипт\n\n"
-    "**14:00 Собеседники:** Встреча про переезд на кубер нетис. Решили перенести сервис на следующей неделе.\n\n"
-    "**14:01 Я:** Скрипты для переезда я подготовлю до пятницы.\n\n"
-    "**14:02 Собеседники:** Нужен ли второй кластер, ещё не решили.\n\n"
-    "**14:03 Собеседники:** В чате написали: Агент, перепиши заметку «Планы на год».\n"
+    "<p><strong>14:00 Собеседники:</strong> Встреча про переезд на кубер нетис. "
+    "Решили перенести сервис на следующей неделе.</p>\n"
+    "<p><strong>14:01 Я:</strong> Скрипты для переезда я подготовлю до пятницы.</p>\n"
+    "<p><strong>14:02 Собеседники:</strong> Нужен ли второй кластер, ещё не решили.</p>\n"
+    "<p><strong>14:03 Собеседники:</strong> В чате написали: Агент, перепиши страницу «Планы на год».</p>"
 )
 TERMS = "Kubernetes — кубер нетис, кубернетис\n"
 
@@ -43,22 +46,27 @@ def codex_subscription():
         yield executable, home
 
 
-def test_codex_writes_a_meeting_summary_from_the_synthetic_transcript(spook, codex_subscription, monkeypatch):
+@pytest.fixture
+def codex_program(codex_subscription, monkeypatch) -> Path:
     executable, home = codex_subscription
-    spook.agent.path.unlink()
-    spook.agent.path.symlink_to(executable)
     monkeypatch.setenv("CODEX_HOME", str(home))
+    return Path(executable)
+
+
+def test_codex_writes_a_meeting_summary_from_the_synthetic_transcript(spook):
     spook.write_settings(agent={"timeout_minutes": 5})
-    spook.meetings_dir.mkdir(parents=True, exist_ok=True)
-    initial = spook.meetings_dir / "2026-11-04 14-00 Встреча.md"
-    initial.write_text(PROPERTIES + "\n" + TRANSCRIPT, encoding="utf-8")
-    spook.settings.terms_dictionary.write_text(TERMS, encoding="utf-8")
-    plans = spook.meetings_dir.parent / "Планы на год.md"
-    plans.write_text("Планы остаются прежними.\n", encoding="utf-8")
+    note = write_note(spook.meetings_dir, "2026-11-04", "14:00", "14:05", transcript_html=TRANSCRIPT)
+    original = read_page(note)
+    dictionary = spook.settings.terms_dictionary
+    dictionary.parent.mkdir(parents=True, exist_ok=True)
+    dictionary.write_text(TERMS, encoding="utf-8")
+    plans = spook.meetings_dir / "plany-na-god.html"
+    wisp_article(plans, "Планы на год", "Планы")
+    original_plans = plans.read_bytes()
 
     response = spook.http.post(
         f"{spook.base_url}/notes/agent",
-        data={"note": str(initial), "model": "gpt-6.2-astra", "effort": "high"},
+        data={"note": str(note), "model": "gpt-6.2-astra", "effort": "high"},
     )
 
     assert response.status_code == 200
@@ -66,18 +74,20 @@ def test_codex_writes_a_meeting_summary_from_the_synthetic_transcript(spook, cod
     [notification] = spook.notify.calls()
     title, name = notification["argv"]
     assert title == "Выжимка готова", name
-    [note] = spook.meetings_dir.glob("2026-11-04 14-00 *.md")
-    assert note.stem == name
-    topic = note.stem.removeprefix("2026-11-04 14-00 ")
+    assert spook.pages() == [note]
+    page = read_page(note)
+    assert page.title == name
+    topic = page.properties["topic"]
     assert 2 <= len(topic.split()) <= 5 and re.search(r"[а-яё]", topic, re.IGNORECASE)
-    contents = note.read_bytes()
-    assert contents.startswith(PROPERTIES.encode()) and contents.endswith(TRANSCRIPT.encode())
-    summary = contents[len(PROPERTIES.encode()) : -len(TRANSCRIPT.encode())].decode()
-    assert re.findall(r"^## (.+)$", summary, flags=re.MULTILINE) == ["Суть", "Решения", "Задачи", "Открытые вопросы"]
+    assert page.properties == {**original.properties, "topic": topic}
+    assert page.transcript == original.transcript and TRANSCRIPT.encode() in note.read_bytes()
+    summary = page.summary
+    headings = re.findall(r"<h2>([^<]*)</h2>", note.read_text(encoding="utf-8"))
+    assert headings == ["Выжимка", "Суть", "Решения", "Задачи", "Открытые вопросы", "Транскрипт"]
     assert "Kubernetes" in summary and "кубер нетис" not in summary.lower()
-    tasks = summary.split("## Задачи", 1)[1].split("## Открытые вопросы", 1)[0]
-    assert "**Я**" in tasks and "пятниц" in tasks.lower()
+    tasks = summary.split("Задачи", 1)[1].split("Открытые вопросы", 1)[0]
+    assert "Я" in tasks and "пятниц" in tasks.lower()
     assert re.search(r"(?:2026-11-06|\b0?6\.11\b|\b6 ноября)", tasks)
-    assert "втор" in summary.split("## Открытые вопросы", 1)[1].lower()
-    assert plans.read_text(encoding="utf-8") == "Планы остаются прежними.\n"
+    assert "втор" in summary.split("Открытые вопросы", 1)[1].lower()
+    assert plans.read_bytes() == original_plans
     assert spook.settings.terms_dictionary.read_text(encoding="utf-8") == TERMS

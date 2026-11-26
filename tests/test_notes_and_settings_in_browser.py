@@ -4,13 +4,11 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from conftest import agent_model_and_effort, speech
+from wisp_page import read_page
 
 pytestmark = pytest.mark.browser
 
 expect.set_options(timeout=10_000)
-
-NOTE_NAME = "2026-11-06 14-02 Репликация в Raft"
-
 
 def meeting_with_summary(spook) -> None:
     spook.agent.play("summary")
@@ -37,6 +35,11 @@ def test_notes_screen_shows_summary_state_opens_agent_log_and_restarts_agent_onl
     expect(row).to_contain_text("Встреча")
     expect(row).to_contain_text("готово")
     screenshot(page, "заметки")
+    [note] = spook.pages()
+    row.get_by_role("button", name="Открыть в Wisp").click()
+    expect(page.locator("#notice")).to_contain_text("Открываю в Wisp")
+    [opened] = spook.opener.calls()
+    assert opened["argv"] == [note.as_uri()]
 
     row.get_by_role("link", name="Журнал").click()
     expect(page.locator("body")).to_contain_text("Выжимка: готово")
@@ -68,8 +71,8 @@ def test_notes_screen_shows_summary_state_opens_agent_log_and_restarts_agent_onl
     assert [agent_model_and_effort(call) for call in spook.agent.calls()] == [
         ("gpt-6.2-astra", "high"), ("gpt-6.2-sol", "low")
     ]
-    note = spook.meetings_dir / f"{NOTE_NAME}.md"
-    assert "Выжимка обновлена." in note.read_text(encoding="utf-8")
+    assert spook.pages() == [note]
+    assert "Выжимка обновлена." in read_page(note).summary
 
 
 def test_settings_screen_saves_auto_stop_and_meeting_model_and_rejects_invalid_value_with_reason(spook, page, screenshot):
