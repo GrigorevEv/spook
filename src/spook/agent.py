@@ -83,7 +83,7 @@ class AgentJob:
 
 def denied_rules(settings: Settings, cwd: Path) -> list[str]:
     folders: list[Path] = []
-    for folder in (cwd, settings.meeting.folder, settings.lecture.folder, settings.wiki):
+    for folder in (cwd, settings.meeting.folder, settings.wiki):
         if folder not in folders:
             folders.append(folder)
     return [
@@ -187,7 +187,8 @@ class AgentQueue:
     def restore(self) -> None:
         path = self._log_dir / QUEUE_NAME
         try:
-            saved = [_Record.from_json(item) for item in json.loads(path.read_text(encoding="utf-8"))]
+            items = json.loads(path.read_text(encoding="utf-8"))
+            saved = [_Record.from_json(item) for item in items if item["kind"] == SessionKind.MEETING]
         except FileNotFoundError:
             return
         except (OSError, ValueError, KeyError, TypeError):
@@ -323,9 +324,8 @@ class AgentQueue:
         timeout = settings.agent.timeout_minutes * 60
         job = self._current_job(record)
         command = _wrapped(settings.agent.wrapper, timeout) + job.command(program, denied_rules(settings, job.cwd))
-        if job.kind is SessionKind.MEETING:
-            context = write_meeting_context(settings, job.note_path, self._log_dir / "meeting-context.md")
-            command += ["--append-system-prompt-file", str(context)]
+        context = write_meeting_context(settings, job.note_path, self._log_dir / "meeting-context.md")
+        command += ["--append-system-prompt-file", str(context)]
         guard = TranscriptGuard.remember(job.note_path)
         with self._lock:
             record.snapshot = guard.snapshot

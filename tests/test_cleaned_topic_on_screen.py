@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 def test_screen_shows_topic_cleaned_of_forbidden_characters(spook):
-    spook.start_lecture(topic=' Raft:\t"репликация" <журнала>/логов? #1 *|\\ ')
+    spook.start_meeting(topic=' Raft:\t"репликация" <журнала>/логов? #1 *|\\ ')
 
     page = spook.page().text
 

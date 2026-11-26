@@ -6,10 +6,10 @@ from conftest import NOTE_AFTER_START, note_text, speech
 def test_slow_recognizer_loses_nothing_and_note_ends_at_stop_not_when_queue_is_recognized(spook):
     spook.recognizer.say("Первая.", "Вторая.", "Третья.", "Четвёртая.", "Хвост.")
     spook.recognizer.hold()
-    spook.start_lecture()
+    spook.start_meeting()
 
     with spook.events() as events:
-        spook.audio.feed(speech(85))
+        spook.feed_system(speech(85))
         spook.clock.advance(85)
         response = spook.stop()
         assert response.status_code == 200, response.text
@@ -27,26 +27,26 @@ def test_slow_recognizer_loses_nothing_and_note_ends_at_stop_not_when_queue_is_r
         "date: 2026-11-06\n"
         'start: "14:02"\n'
         'end: "14:03"\n'
-        "tags: [лекция]\n"
+        "tags: [встреча]\n"
         "---\n"
         "\n"
         "## Транскрипт\n"
-        "\n**0:00:00** Первая. Вторая. Третья. Четвёртая. Хвост.\n"
+        "\n**14:02 Собеседники:** Первая. Вторая. Третья. Четвёртая. Хвост.\n"
     )
 
 
 def test_backlog_is_shown_only_while_a_segment_waits_behind_the_one_being_recognized(spook):
     spook.recognizer.say("Первая.", "Вторая.")
     spook.recognizer.hold()
-    spook.start_lecture()
+    spook.start_meeting()
 
     with spook.events() as events:
         events.wait_for("backlog")
-        spook.audio.feed(speech(20))
+        spook.feed_system(speech(20))
         alone = events.wait_for("backlog")
         page_alone = spook.page().text
 
-        spook.audio.feed(speech(20))
+        spook.feed_system(speech(20))
 
         waiting = events.wait_for("backlog")
         page_waiting = spook.page().text
@@ -64,10 +64,10 @@ def test_backlog_is_shown_only_while_a_segment_waits_behind_the_one_being_recogn
 def test_event_stream_reports_backlog_in_seconds_of_sound_and_page_clears_it_when_queue_is_empty(spook):
     spook.recognizer.say("Первая.", "Вторая.", "Третья.")
     spook.recognizer.hold()
-    spook.start_lecture()
+    spook.start_meeting()
 
     with spook.events() as events:
-        spook.audio.feed(speech(60))
+        spook.feed_system(speech(60))
         waiting = events.wait_for("backlog", containing="60 с")
         page_while_waiting = spook.page().text
 
@@ -89,10 +89,10 @@ def test_event_stream_reports_backlog_in_seconds_of_sound_and_page_clears_it_whe
 def test_while_finishing_page_shows_how_much_sound_is_left_to_recognize(spook):
     spook.recognizer.say("Первая.", "Вторая.", "Хвост.")
     spook.recognizer.hold()
-    spook.start_lecture()
+    spook.start_meeting()
 
     with spook.events() as events:
-        spook.audio.feed(speech(45))
+        spook.feed_system(speech(45))
         spook.clock.advance(45)
         events.wait_for("backlog", containing="40 с")
 
@@ -121,10 +121,10 @@ def test_while_finishing_page_shows_how_much_sound_is_left_to_recognize(spook):
 def test_on_pause_backlog_stays_visible_until_queue_is_empty(spook):
     spook.recognizer.say("Первая.", "Вторая.", "Хвост.")
     spook.recognizer.hold()
-    spook.start_lecture()
+    spook.start_meeting()
 
     with spook.events() as events:
-        spook.audio.feed(speech(45))
+        spook.feed_system(speech(45))
         spook.clock.advance(45)
         events.wait_for("backlog", containing="40 с")
 
@@ -147,8 +147,8 @@ def test_on_pause_backlog_stays_visible_until_queue_is_empty(spook):
 def test_reopened_event_stream_starts_with_full_state_including_backlog(spook):
     spook.recognizer.say("Первая.", "Вторая.")
     spook.recognizer.hold()
-    spook.start_lecture()
-    spook.audio.feed(speech(40))
+    spook.start_meeting()
+    spook.feed_system(speech(40))
 
     with spook.events() as events:
         opening = [events.next_event() for _ in range(4)]

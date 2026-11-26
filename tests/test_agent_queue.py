@@ -1,82 +1,82 @@
 from __future__ import annotations
 
-import html
 import logging
 import re
+import shlex
 
 from conftest import NO_SPEECH, speech
 
-NOTE_NAME = "2026-11-06 14-02 Лекция"
+NOTE_NAME = "2026-11-06 14-02 Встреча"
 
 
-def lecture_with_utterance(spook, *texts: str) -> None:
+def meeting_with_utterance(spook, *texts: str) -> None:
     spook.recognizer.say(*texts)
-    spook.start_lecture()
+    spook.start_meeting()
     with spook.events() as events:
-        spook.audio.feed(speech(20 * len(texts)))
+        spook.feed_system(speech(20 * len(texts)))
         events.wait_for("paragraph", containing=texts[-1])
 
 
-def test_after_stop_agent_runs_once_with_skill_note_model_and_effort_in_wiki_root(spook):
-    spook.write_settings(lecture={"skill": "spook-lecture", "model": "sonnet", "effort": "medium"})
+def test_after_stop_agent_runs_once_with_skill_note_model_and_effort_in_meetings_folder(spook):
+    spook.write_settings(meeting={"skill": "spook-meeting", "model": "sonnet", "effort": "medium"})
     spook.agent.play("summary")
-    lecture_with_utterance(spook, "Реплика.")
+    meeting_with_utterance(spook, "Реплика.")
 
     with spook.events() as events:
         spook.stop()
         events.wait_for("agent", containing="готово")
 
-    note_path = spook.lectures_dir / f"{NOTE_NAME}.md"
+    note_path = spook.meetings_dir / f"{NOTE_NAME}.md"
     [call] = spook.agent.calls()
     assert call["argv"][: call["argv"].index("--disallowedTools")] == [
-        "-p", f"/spook-lecture {note_path}",
+        "-p", f"/spook-meeting {note_path}",
         "--model", "sonnet",
         "--effort", "medium",
         "--output-format", "stream-json", "--verbose", "--include-hook-events",
         "--permission-mode", "default", "--permission-prompts", "none",
     ]
-    assert call["cwd"] == str(spook.wiki_dir)
+    assert call["cwd"] == str(spook.meetings_dir)
 
 
 def test_note_with_topic_goes_to_agent_under_its_final_name(spook):
     spook.agent.play("summary")
-    lecture_with_utterance(spook, "Реплика.")
+    meeting_with_utterance(spook, "Реплика.")
     spook.set_topic("Репликация в Raft")
 
     with spook.events() as events:
         spook.stop()
         agent = events.wait_for("agent", containing="готово")
 
-    renamed = spook.lectures_dir / "2026-11-06 14-02 Репликация в Raft.md"
-    assert [call["argv"][1] for call in spook.agent.calls()] == [f"/spook-lecture {renamed}"]
+    renamed = spook.meetings_dir / "2026-11-06 14-02 Репликация в Raft.md"
+    assert [call["argv"][1] for call in spook.agent.calls()] == [f"/spook-meeting {renamed}"]
     assert "2026-11-06 14-02 Репликация в Raft" in agent.data
-    assert "## О чём" in renamed.read_text(encoding="utf-8")
-    assert (spook.state_dir / "agent" / "lecture" / "2026-11-06 14-02 Репликация в Raft.log").exists()
+    assert "## Суть" in renamed.read_text(encoding="utf-8")
+    assert (spook.state_dir / "agent" / "meeting" / "2026-11-06 14-02 Репликация в Raft.log").exists()
 
 
 def test_agent_that_wrote_summary_above_transcript_gives_done(spook):
     spook.agent.play("summary")
-    lecture_with_utterance(spook, "Реплика.")
+    meeting_with_utterance(spook, "Реплика.")
 
     with spook.events() as events:
         spook.stop()
         agent = events.wait_for("agent", containing="готово")
 
     assert NOTE_NAME in agent.data
-    assert (spook.lectures_dir / f"{NOTE_NAME}.md").read_text(encoding="utf-8") == (
+    assert (spook.meetings_dir / f"{NOTE_NAME}.md").read_text(encoding="utf-8") == (
         "---\n"
         "date: 2026-11-06\n"
         'start: "14:02"\n'
         'end: "14:02"\n'
-        "tags: [лекция]\n"
+        "tags: [встреча]\n"
         "---\n"
         "\n"
-        "## О чём\n"
+        "## Суть\n"
         "\n"
         "Про тесты.\n"
         "\n"
         "## Транскрипт\n"
-        "\n**0:00:00** Реплика.\n"
+        "\n**14:02 Собеседники:** Реплика.\n"
     )
     page = spook.page().text
     assert "готово" in page and "ошибка" not in page
@@ -84,7 +84,7 @@ def test_agent_that_wrote_summary_above_transcript_gives_done(spook):
 
 def test_agent_that_failed_gives_error_with_its_message(spook):
     spook.agent.play("fail")
-    lecture_with_utterance(spook, "Реплика.")
+    meeting_with_utterance(spook, "Реплика.")
 
     with spook.events() as events:
         spook.stop()
@@ -96,7 +96,7 @@ def test_agent_that_failed_gives_error_with_its_message(spook):
 
 def test_agent_that_finished_without_summary_gives_error(spook):
     spook.agent.play("nothing")
-    lecture_with_utterance(spook, "Реплика.")
+    meeting_with_utterance(spook, "Реплика.")
 
     with spook.events() as events:
         spook.stop()
@@ -107,20 +107,20 @@ def test_agent_that_finished_without_summary_gives_error(spook):
 
 def test_second_session_waits_in_queue_while_agent_works_on_first_and_start_is_allowed(spook):
     spook.agent.play("wait")
-    lecture_with_utterance(spook, "Первая лекция.")
+    meeting_with_utterance(spook, "Первая встреча.")
 
     with spook.events() as events:
         spook.stop()
         events.wait_for("agent", containing="работает")
         spook.clock.advance(60 * 60)
 
-        assert spook.start_lecture().status_code == 200
-        spook.recognizer.say("Вторая лекция.")
-        spook.audio.feed(speech(20))
-        events.wait_for("paragraph", containing="Вторая лекция.")
+        assert spook.start_meeting().status_code == 200
+        spook.recognizer.say("Вторая встреча.")
+        spook.feed_system(speech(20))
+        events.wait_for("paragraph", containing="Вторая встреча.")
         spook.stop()
         both = events.wait_for("agent", containing="в очереди")
-        assert "2026-11-06 15-02 Лекция" in both.data and "работает" in both.data
+        assert "2026-11-06 15-02 Встреча" in both.data and "работает" in both.data
         spook.wait_until(lambda: len(spook.agent.calls()) == 1)
 
         spook.agent.release()
@@ -132,26 +132,25 @@ def test_second_session_waits_in_queue_while_agent_works_on_first_and_start_is_a
 
     assert final.data.count("готово") == 2
     assert [call["argv"][1].split(" ", 1)[1] for call in spook.agent.calls()] == [
-        str(spook.lectures_dir / "2026-11-06 14-02 Лекция.md"),
-        str(spook.lectures_dir / "2026-11-06 15-02 Лекция.md"),
+        str(spook.meetings_dir / "2026-11-06 14-02 Встреча.md"),
+        str(spook.meetings_dir / "2026-11-06 15-02 Встреча.md"),
     ]
 
 
 def test_agent_log_is_kept_in_state_dir_outside_vault_and_opens_from_page(spook):
     spook.agent.play("fail")
-    lecture_with_utterance(spook, "Реплика.")
+    meeting_with_utterance(spook, "Реплика.")
 
     with spook.events() as events:
         spook.stop()
         events.wait_for("agent", containing="ошибка")
 
-    log_path = spook.state_dir / "agent" / "lecture" / f"{NOTE_NAME}.log"
-    assert log_path.read_text(encoding="utf-8") == (
-        f"$ {spook.agent.path} -p '/spook-lecture {spook.lectures_dir / NOTE_NAME}.md' --model opus --effort high"
-        " --output-format stream-json --verbose --include-hook-events --permission-mode default --permission-prompts none"
-        f" --disallowedTools 'Edit(/{spook.wiki_dir}/**/.claude/**)' 'Edit(/{spook.meetings_dir}/**/.claude/**)'"
-        f" 'Edit(/{spook.lectures_dir}/**/.claude/**)' 'Edit(/{spook.wiki_dir}/_tools/**)' 'Edit(/{spook.wiki_dir}/_templates/**)'\n"
-        f"(рабочий каталог: {spook.wiki_dir})\n"
+    log_path = spook.state_dir / "agent" / "meeting" / f"{NOTE_NAME}.log"
+    command, output = log_path.read_text(encoding="utf-8").split("\n", 1)
+    [call] = spook.agent.calls()
+    assert command == "$ " + shlex.join([str(spook.agent.path), *call["argv"]])
+    assert output == (
+        f"(рабочий каталог: {spook.meetings_dir})\n"
         "\n"
         "Заглушка Агента: сценарий «fail».\n"
         "\n"
@@ -160,7 +159,7 @@ def test_agent_log_is_kept_in_state_dir_outside_vault_and_opens_from_page(spook)
         "\n"
         "Код возврата: 1. Выжимка: ошибка — Сценарий: Агент упал.\n"
     )
-    assert sorted(path.name for path in spook.lectures_dir.iterdir()) == [f"{NOTE_NAME}.md"]
+    assert sorted(path.name for path in spook.meetings_dir.iterdir()) == [f"{NOTE_NAME}.md"]
 
     page = spook.page().text
     link = re.search(r'href="(/agent/log\?note=[^"]+)"', page)
@@ -173,7 +172,7 @@ def test_agent_log_is_kept_in_state_dir_outside_vault_and_opens_from_page(spook)
 
 def test_notification_reports_ready_summary(spook):
     spook.agent.play("summary")
-    lecture_with_utterance(spook, "Реплика.")
+    meeting_with_utterance(spook, "Реплика.")
 
     spook.stop()
     spook.wait_until(lambda: spook.notify.calls())
@@ -183,7 +182,7 @@ def test_notification_reports_ready_summary(spook):
 
 def test_notification_reports_agent_error_with_message(spook):
     spook.agent.play("fail")
-    lecture_with_utterance(spook, "Реплика.")
+    meeting_with_utterance(spook, "Реплика.")
 
     spook.stop()
     spook.wait_until(lambda: spook.notify.calls())
@@ -195,9 +194,9 @@ def test_notification_reports_agent_error_with_message(spook):
 
 def test_service_journal_records_agent_start_and_outcome(spook, caplog):
     caplog.set_level(logging.INFO, logger="spook")
-    spook.write_settings(lecture={"model": "sonnet", "effort": "medium"})
+    spook.write_settings(meeting={"model": "sonnet", "effort": "medium"})
     spook.agent.play("fail")
-    lecture_with_utterance(spook, "Реплика.")
+    meeting_with_utterance(spook, "Реплика.")
 
     spook.stop()
     spook.wait_until(lambda: spook.notify.calls())
@@ -205,7 +204,7 @@ def test_service_journal_records_agent_start_and_outcome(spook, caplog):
 
     journal = [record.getMessage() for record in caplog.records if NOTE_NAME in record.getMessage()]
     assert journal == [
-        f"Агент запущен: {NOTE_NAME} — spook-lecture, sonnet, medium",
+        f"Агент запущен: {NOTE_NAME} — spook-meeting, sonnet, medium",
         f"Агент закончил: {NOTE_NAME} — ошибка: Сценарий: Агент упал.",
     ]
 
@@ -213,7 +212,7 @@ def test_service_journal_records_agent_start_and_outcome(spook, caplog):
 def test_unsent_notification_is_recorded_in_service_journal(spook, caplog):
     spook.agent.play("summary")
     spook.notify.play("fail")
-    lecture_with_utterance(spook, "Реплика.")
+    meeting_with_utterance(spook, "Реплика.")
 
     spook.stop()
     spook.wait_until(lambda: "Уведомление" in caplog.text)
@@ -226,31 +225,31 @@ def test_unsent_notification_is_recorded_in_service_journal(spook, caplog):
 
 def test_session_without_utterances_does_not_run_agent_and_leaves_no_empty_note(spook):
     spook.recognizer.say(NO_SPEECH)
-    spook.start_lecture()
-    assert (spook.lectures_dir / f"{NOTE_NAME}.md").exists()
+    spook.start_meeting()
+    assert (spook.meetings_dir / f"{NOTE_NAME}.md").exists()
 
     with spook.events() as events:
-        spook.audio.feed(speech(20))
+        spook.feed_system(speech(20))
         spook.stop()
         events.wait_for("state", containing="нет Сессии")
 
-    assert list(spook.lectures_dir.iterdir()) == []
+    assert list(spook.meetings_dir.iterdir()) == []
     page = spook.page().text
     assert "Выжимка" not in page and "Заметка:" not in page
     assert spook.agent.calls() == [] and spook.notify.calls() == []
 
 
 def test_agent_queue_survives_service_restart_interrupted_run_is_error_and_waiting_note_runs(spook):
-    first = spook.lectures_dir / f"{NOTE_NAME}.md"
-    second = spook.lectures_dir / "2026-11-06 15-02 Лекция.md"
+    first = spook.meetings_dir / f"{NOTE_NAME}.md"
+    second = spook.meetings_dir / "2026-11-06 15-02 Встреча.md"
     spook.agent.play("spoil-and-hang")
-    lecture_with_utterance(spook, "Первая лекция.")
+    meeting_with_utterance(spook, "Первая встреча.")
     with spook.events() as events:
         spook.stop()
         events.wait_for("agent", containing="работает")
     spook.wait_until(lambda: "Транскрипт переписан Агентом." in first.read_text(encoding="utf-8"))
     spook.clock.advance(60 * 60)
-    lecture_with_utterance(spook, "Вторая лекция.")
+    meeting_with_utterance(spook, "Вторая встреча.")
     with spook.events() as events:
         spook.stop()
         events.wait_for("agent", containing="в очереди")
@@ -263,21 +262,21 @@ def test_agent_queue_survives_service_restart_interrupted_run_is_error_and_waiti
         ["Ошибка Агента", f"{NOTE_NAME}: Агент прерван перезапуском службы"],
         ["Выжимка готова", second.stem],
     ]
-    assert [call["argv"][1] for call in spook.agent.calls()] == [f"/spook-lecture {first}", f"/spook-lecture {second}"]
+    assert [call["argv"][1] for call in spook.agent.calls()] == [f"/spook-meeting {first}", f"/spook-meeting {second}"]
     assert first.read_text(encoding="utf-8") == (
         "---\n"
         "date: 2026-11-06\n"
         'start: "14:02"\n'
         'end: "14:02"\n'
-        "tags: [лекция]\n"
+        "tags: [встреча]\n"
         "---\n"
         "\n"
-        "## О чём\n"
+        "## Суть\n"
         "\n"
         "Про тесты.\n"
         "\n"
         "## Транскрипт\n"
-        "\n**0:00:00** Первая лекция.\n"
+        "\n**14:02 Собеседники:** Первая встреча.\n"
     )
     page = spook.page().text
     assert "Агент прерван перезапуском службы" in page
@@ -287,34 +286,6 @@ def test_agent_queue_survives_service_restart_interrupted_run_is_error_and_waiti
         "\nОхрана Транскрипта: Агент изменил Транскрипт — возвращён исходный.\n"
         "\nВыжимка: ошибка — Агент прерван перезапуском службы\n"
     )
-
-
-def test_meeting_and_lecture_with_same_name_keep_separate_journals(spook):
-    spook.agent.play("fail")
-    spook.recognizer.say("Лекция.")
-    spook.start_lecture(topic="Планёрка")
-    with spook.events() as events:
-        spook.audio.feed(speech(20))
-        events.wait_for("paragraph", containing="Лекция.")
-        spook.stop()
-        events.wait_for("agent", containing="ошибка")
-    spook.agent.play("summary")
-    spook.recognizer.say("Встреча.")
-    spook.start_meeting(topic="Планёрка")
-    with spook.events() as events:
-        spook.audio.feed(speech(20))
-        events.wait_for("paragraph", containing="Встреча.")
-        spook.stop()
-        events.wait_for("agent", containing="готово")
-
-    for page in (spook.page().text, spook.http.get(f"{spook.base_url}/notes").text):
-        links = re.findall(r'href="(/agent/log\?note=[^"]+)"', page)
-        assert len(links) == 2, page
-        journals = sorted(spook.http.get(f"{spook.base_url}{html.unescape(link)}").text for link in links)
-        meeting, lecture = sorted(journals, key=lambda journal: "/spook-lecture" in journal)
-        assert "/spook-meeting" in meeting and "/spook-lecture" not in meeting
-        assert "/spook-lecture" in lecture and "/spook-meeting" not in lecture
-        assert meeting.endswith("Выжимка: готово\n") and lecture.endswith("Выжимка: ошибка — Сценарий: Агент упал.\n")
 
 
 def test_log_of_unknown_note_is_not_found_and_paths_outside_log_dir_are_refused(spook):

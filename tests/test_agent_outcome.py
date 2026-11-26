@@ -6,22 +6,22 @@ from pathlib import Path
 from conftest import speech
 from test_agent_block import ShownJob, jobs_on_screen
 
-NOTE_NAME = "2026-11-06 14-02 Лекция"
+NOTE_NAME = "2026-11-06 14-02 Встреча"
 
 
 def run_agent(spook, scenario: str, until: str) -> None:
     spook.agent.play(scenario)
     spook.recognizer.say("Реплика.")
-    spook.start_lecture()
+    spook.start_meeting()
     with spook.events() as events:
-        spook.audio.feed(speech(20))
+        spook.feed_system(speech(20))
         events.wait_for("paragraph", containing="Реплика.")
         spook.stop()
         events.wait_for("agent", containing=until)
 
 
 def journal(spook) -> str:
-    return (spook.state_dir / "agent" / "lecture" / f"{NOTE_NAME}.log").read_text(encoding="utf-8")
+    return (spook.state_dir / "agent" / "meeting" / f"{NOTE_NAME}.log").read_text(encoding="utf-8")
 
 
 def running_agent_processes(spook) -> list[Path]:

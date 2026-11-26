@@ -84,6 +84,7 @@ def test_real_claude_code_writes_summary_and_run_is_done_with_full_output_in_jou
     settings_path.write_text(
         f"port = {port}\n"
         f'wiki = "{layout / "wiki"}"\n'
+        f'terms_dictionary = "{meetings / "Словарь терминов.md"}"\n'
         "\n"
         "[meeting]\n"
         f'folder = "{meetings}"\n'

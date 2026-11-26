@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import os
-import sys
 import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
+from urllib.parse import quote
 
 import httpx
 import pytest
@@ -17,7 +17,7 @@ from spook.serve import make_server
 from spook.settings import default_settings_path, load_settings
 from spook.web import create_app
 
-from conftest import SESSION_START, STUBS_DIR, EventStream, StubProgram, free_port
+from conftest import SESSION_START, EventStream, StubProgram, free_port
 from test_notes_screen import write_note
 from test_settings_screen import Form
 
@@ -30,7 +30,6 @@ class ServiceWithoutSettingsFile:
     clock: ManualClock
     notify: StubProgram
     opener: StubProgram
-    wiki: StubProgram
     http: httpx.Client = field(repr=False)
 
     def events(self) -> EventStream:
@@ -44,13 +43,6 @@ class ServiceWithoutSettingsFile:
         while not condition():
             assert time.monotonic() < deadline, "условие не наступило за отведённое время"
             time.sleep(0.01)
-
-
-def put_wiki_tool(home: Path, wiki: StubProgram) -> None:
-    tool = home / "learn/wiki/_tools/wiki_html.py"
-    tool.parent.mkdir(parents=True)
-    argv = [sys.executable, str(STUBS_DIR / "wiki_stub.py"), str(wiki.control)]
-    tool.write_text(f"import os, sys\nos.execv({sys.executable!r}, {argv!r} + sys.argv[1:])\n", encoding="utf-8")
 
 
 @pytest.fixture
@@ -67,10 +59,8 @@ def service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Service
     monkeypatch.setenv("PATH", f"{programs}{os.pathsep}{os.environ['PATH']}")
     notify = StubProgram.create(tmp_path / "stubs", "notify")
     opener = StubProgram.create(tmp_path / "stubs", "open")
-    wiki = StubProgram.create(tmp_path / "stubs", "wiki")
     (programs / "notify-send").symlink_to(notify.path)
     (programs / "xdg-open").symlink_to(opener.path)
-    put_wiki_tool(home, wiki)
     settings_path = default_settings_path()
     assert settings_path.is_relative_to(tmp_path) and not settings_path.exists()
     clock = ManualClock(SESSION_START)
@@ -100,7 +90,6 @@ def service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Service
                 clock=clock,
                 notify=notify,
                 opener=opener,
-                wiki=wiki,
                 http=http,
             )
     finally:
@@ -119,12 +108,7 @@ def test_without_settings_file_screen_shows_default_folders_skills_models_effort
         "meeting.model": "opus",
         "meeting.effort": "high",
     }
-    assert {key: values[key] for key in ("lecture.folder", "lecture.skill", "lecture.model", "lecture.effort")} == {
-        "lecture.folder": str(service.home / "learn/wiki/lectures"),
-        "lecture.skill": "spook-lecture",
-        "lecture.model": "opus",
-        "lecture.effort": "high",
-    }
+    assert not any(key.startswith("lecture.") for key in values)
     assert values["auto_stop_minutes"] == "5"
     assert values["terms_dictionary"] == str(service.home / "Documents/notes/работа/Словарь терминов.md")
     assert (values["sources.system"], values["sources.mic"]) == ("", "")
@@ -132,7 +116,7 @@ def test_without_settings_file_screen_shows_default_folders_skills_models_effort
 
 
 def test_without_settings_file_auto_stop_comes_after_5_minutes_and_is_notified_through_notify_send(service):
-    assert service.http.post(f"{service.base_url}/session/start", data={"kind": "lecture"}).status_code == 200
+    assert service.http.post(f"{service.base_url}/session/start").status_code == 200
 
     with service.events() as events:
         service.clock.advance(5 * 60 - 1)
@@ -147,13 +131,13 @@ def test_without_settings_file_auto_stop_comes_after_5_minutes_and_is_notified_t
     assert not service.config_home.exists()
 
 
-def test_without_settings_file_wiki_page_is_found_by_wiki_tool_in_home_and_opened_with_xdg_open(service):
+def test_without_settings_file_meeting_note_opens_in_obsidian_through_xdg_open(service):
     note = write_note(
-        service.home / "learn/wiki/lectures", "2026-11-05 10-00 Репликация в Raft", "2026-11-05", "10:00", "11:05", "лекция"
+        service.home / "Documents/notes/работа", "2026-11-05 10-00 Планёрка", "2026-11-05", "10:00", "10:30", "встреча"
     )
 
-    response = service.http.post(f"{service.base_url}/notes/wiki", data={"note": str(note)})
+    response = service.http.post(f"{service.base_url}/notes/obsidian", data={"note": str(note)})
 
     assert response.status_code == 200, response.text
-    assert [call["argv"] for call in service.wiki.calls()] == [["file", "2026-11-05 10-00 Репликация в Raft"]]
-    assert [call["argv"] for call in service.opener.calls()] == [[f"file://{service.wiki.control}/html/stranitsa-lektsii.html"]]
+    assert [call["argv"] for call in service.opener.calls()] == [["obsidian://open?path=" + quote(str(note), safe="")]]
+    assert not service.config_home.exists()

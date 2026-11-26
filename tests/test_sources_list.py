@@ -14,13 +14,7 @@ def sources_on_screen(page: str) -> list[tuple[str, str, bool]]:
     return rows
 
 
-def test_lecture_lists_only_system_sound_with_its_device_and_level_meter(spook):
-    spook.start_lecture()
-
-    assert sources_on_screen(spook.page().text) == [("Системный звук", "образцы", True)]
-
-
 def test_meeting_lists_two_sources_system_sound_and_microphone(spook):
     spook.start_meeting()
 
-    assert [name for name, _, _ in sources_on_screen(spook.page().text)] == ["Системный звук", "Микрофон"]
+    assert sources_on_screen(spook.page().text) == [("Системный звук", "образцы", True), ("Микрофон", "образцы", True)]

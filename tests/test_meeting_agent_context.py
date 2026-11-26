@@ -12,7 +12,7 @@ def finished_meeting(spook) -> Path:
     spook.recognizer.say("Обсудим релиз.")
     assert spook.start_meeting().status_code == 200
     with spook.events() as events:
-        spook.audio.feed(speech(20))
+        spook.feed_system(speech(20))
         events.wait_for("paragraph", containing="Обсудим релиз.")
         spook.stop()
         events.wait_for("agent", containing="готово")
@@ -30,7 +30,7 @@ def test_meeting_agent_gets_names_of_work_vault_and_wiki_notes_without_their_con
     write(vault / "личное" / "Пароли.md", f"{SECRET}\n")
     write(vault / ".obsidian" / "Служебное.md", "служебное\n")
     write(vault / "работа" / "схема.png", "не заметка\n")
-    wiki = spook.lectures_dir.parent
+    wiki = spook.wiki_dir
     write(wiki / "Raft.md", f"{SECRET}\n")
     write(wiki / "SCST" / "SCST.md", f"{SECRET}\n")
 
@@ -47,20 +47,6 @@ def test_meeting_agent_gets_names_of_work_vault_and_wiki_notes_without_their_con
     assert SECRET not in context
     assert "Служебное" not in context and "схема" not in context
     assert note.stem not in context
-
-
-def test_lecture_agent_gets_no_list_of_notes(spook):
-    spook.agent.play("summary")
-    spook.recognizer.say("Реплика.")
-    spook.start_lecture()
-    with spook.events() as events:
-        spook.audio.feed(speech(20))
-        events.wait_for("paragraph", containing="Реплика.")
-        spook.stop()
-        events.wait_for("agent", containing="готово")
-
-    [call] = spook.agent.calls()
-    assert "--append-system-prompt-file" not in call["argv"]
 
 
 def test_meeting_agent_creates_terms_dictionary_template_when_file_is_missing(spook):

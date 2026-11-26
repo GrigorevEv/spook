@@ -19,11 +19,11 @@ from spook.web import create_app
 
 SCRIPT = (
     "Сегодня поговорим о том, как Spook слушает звук на компьютере и превращает его в текст.",
-    "Сессия начинается по кнопке «Старт» и бывает двух видов: Встреча или Лекция.",
-    "В Лекции захватывается только Системный звук, в Встрече — ещё и Микрофон.",
+    "Встреча начинается по кнопке «Старт».",
+    "Spook захватывает Системный звук и Микрофон.",
     "Речь режется по паузам на Реплики, каждая Реплика распознаётся целиком.",
     "Звук живёт только в памяти: ни файлов, ни временных файлов на диске.",
-    "Соседние Реплики складываются в абзацы с временем от начала Сессии.",
+    "Соседние Реплики складываются в абзацы с временем по часам и говорящим.",
     "Заметка появляется в Хранилище при «Старт» и дописывается по ходу Сессии.",
     "Сессия живёт в службе, а не во вкладке: вкладку можно закрыть и открыть заново.",
     "После «Стоп» очередь дорабатывается, а Агент пишет Выжимку наверху Заметки.",
@@ -43,7 +43,7 @@ from pathlib import Path
 time.sleep({AGENT_SECONDS})
 prompt = sys.argv[sys.argv.index("-p") + 1]
 note = Path(prompt.split(" ", 1)[1])
-summary = "## О чём\\n\\nПоказ на подменах: здесь Выжимку вместо Агента пишет заглушка.\\n\\n"
+summary = "## Суть\\n\\nSpook захватывает Встречу.\\n\\n## Решения\\n\\nНет.\\n\\n## Задачи\\n\\nНет.\\n\\n## Открытые вопросы\\n\\nНет.\\n\\n"
 note.write_text(note.read_text(encoding="utf-8").replace("## Транскрипт", summary + "## Транскрипт", 1), encoding="utf-8")
 print("Заглушка Агента показа: Выжимка написана.")
 '''
@@ -74,9 +74,9 @@ def demo_programs(folder: Path) -> ProgramSettings:
 def demo_settings(folder: Path, port: int) -> Settings:
     return Settings(
         port=port,
+        wiki=folder / "wiki",
         terms_dictionary=folder / "Словарь терминов.md",
         meeting=KindSettings(folder / "работа", "spook-meeting"),
-        lecture=KindSettings(folder / "lectures", "spook-lecture"),
         recognition=RecognitionSettings(max_utterance_seconds=UTTERANCE_SECONDS),
         programs=demo_programs(folder),
     )

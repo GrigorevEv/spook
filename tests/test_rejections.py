@@ -2,25 +2,25 @@ from __future__ import annotations
 
 
 def test_second_start_during_session_is_rejected(spook):
-    assert spook.start_lecture().status_code == 200
+    assert spook.start_meeting().status_code == 200
 
-    response = spook.start_lecture()
+    response = spook.start_meeting()
 
     assert response.status_code == 409
     assert "Сессия уже идёт" in response.text
-    assert len(list(spook.lectures_dir.iterdir())) == 1
+    assert len(list(spook.meetings_dir.iterdir())) == 1
 
 
-def test_start_is_rejected_when_lectures_folder_cannot_be_created(spook):
+def test_start_is_rejected_when_meetings_folder_cannot_be_created(spook):
     blocker = spook.settings_path.parent / "не папка.txt"
     blocker.write_text("файл на месте папки", encoding="utf-8")
-    spook.write_settings(lectures_dir=blocker / "lectures")
+    spook.write_settings(meetings_dir=blocker / "meetings")
 
-    response = spook.start_lecture()
+    response = spook.start_meeting()
 
     assert response.status_code == 409
-    assert "папку Лекций" in response.text
-    assert str(blocker / "lectures") in response.text
+    assert "папку Встреч" in response.text
+    assert str(blocker / "meetings") in response.text
     assert "нет Сессии" in spook.page().text
 
 

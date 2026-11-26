@@ -2,12 +2,12 @@
 
 ## Purpose
 
-Установка Spook одной командой: `spook install` ставит инструмент, готовит модели, подключает Скиллы, добавляет значок в меню приложений и включает службу пользователя, которая запускается сама вместе с графическим сеансом. `spook uninstall` убирает всё это, оставляя настройки, модели и Журналы Агента.
+`spook install` ставит Spook, готовит модели, подключает Скилл Встречи, добавляет значок в меню приложений и включает службу пользователя. Служба запускается вместе с графическим сеансом. `spook uninstall` удаляет установленное, сохраняя настройки, модели и Журналы Агента.
 
 ## Requirements
 
 ### Requirement: `spook install` ставит всё одной командой
-Команда `spook install` SHALL по порядку: установить инструмент командой `uv tool install --reinstall <репозиторий>`; подготовить модели командой `spook prepare`; подключить Скиллы; записать значок в меню приложений и обновить базу значков; записать юнит службы и включить её командами `systemctl --user daemon-reload`, `try-restart spook.service` и `enable --now spook.service`.
+Команда `spook install` SHALL по порядку: установить инструмент командой `uv tool install --reinstall <репозиторий>`; подготовить модели командой `spook prepare`; подключить Скилл Встречи; записать значок в меню приложений и обновить базу значков; записать юнит службы и включить её командами `systemctl --user daemon-reload`, `try-restart spook.service` и `enable --now spook.service`.
 
 #### Scenario: Внешние команды установки
 - **GIVEN** репозиторий Spook и домашний каталог без следов прежней установки
@@ -41,26 +41,36 @@
 - **THEN** проверка проходит без замечаний
 
 ### Requirement: Скиллы подключаются ссылками
-Каждый Скилл из папки `skills/` репозитория SHALL подключаться к скиллам пользователя ссылкой `~/.claude/skills/<имя>` на папку Скилла в репозитории. Чужой Скилл с тем же именем SHALL остаться нетронутым, и установка сообщает о нём. Ссылка на исчезнувшую копию Скилла заменяется.
+Spook SHALL поставлять Скилл `spook-meeting`. Каждый Скилл из папки `skills/` репозитория подключается ссылкой `~/.claude/skills/<имя>`. Если место занято чужим Скиллом, установка SHALL сохранить его и сообщить об этом. Ссылка на исчезнувшую копию подключаемого Скилла заменяется. При обновлении установка SHALL убрать прежнюю ссылку `spook-lecture` только тогда, когда она указывает на Скилл Лекции этого репозитория.
 
 #### Scenario: Скилл из репозитория
-- **GIVEN** в репозитории есть Скилл `skills/spook-probe` с файлом `SKILL.md`
+- **GIVEN** в репозитории есть Скилл `skills/spook-meeting` с файлом `SKILL.md`
 - **WHEN** выполнен `spook install`
-- **THEN** `~/.claude/skills/spook-probe` — ссылка на `skills/spook-probe` репозитория
+- **THEN** `~/.claude/skills/spook-meeting` — ссылка на `skills/spook-meeting` репозитория
 
 #### Scenario: Чужой Скилл с тем же именем
-- **GIVEN** `~/.claude/skills/spook-probe` — папка пользователя с собственным `SKILL.md`, а `~/.claude/skills/spook-other` — ссылка в другое место
-- **WHEN** выполнен `spook install` из репозитория со Скиллами `spook-probe` и `spook-other`
+- **GIVEN** `~/.claude/skills/spook-meeting` — папка пользователя с собственным `SKILL.md`, а `~/.claude/skills/spook-other` — ссылка в другое место
+- **WHEN** выполнен `spook install` из репозитория со Скиллами `spook-meeting` и `spook-other`
 - **THEN** папка и ссылка пользователя остались прежними
-- **AND** вывод установки называет `spook-probe` и `spook-other`
+- **AND** вывод установки называет `spook-meeting` и `spook-other`
 
 #### Scenario: Ссылка на исчезнувшую копию
-- **GIVEN** `~/.claude/skills/spook-probe` — ссылка на папку, которой больше нет
+- **GIVEN** `~/.claude/skills/spook-meeting` — ссылка на папку, которой больше нет
 - **WHEN** выполнен `spook install`
-- **THEN** ссылка ведёт на `skills/spook-probe` репозитория
+- **THEN** ссылка ведёт на `skills/spook-meeting` репозитория
+
+#### Scenario: Обновление со Скиллом Лекции
+- **GIVEN** `~/.claude/skills/spook-lecture` — ссылка на прежний `skills/spook-lecture` этого репозитория
+- **WHEN** выполняется `spook install` после обновления
+- **THEN** ссылка `spook-lecture` удалена, подключён `spook-meeting`
+
+#### Scenario: На месте прежнего Скилла лежит Скилл пользователя
+- **GIVEN** `~/.claude/skills/spook-lecture` — папка пользователя или ссылка на его собственный Скилл
+- **WHEN** выполняется `spook install`
+- **THEN** папка или ссылка пользователя сохраняется, Скилл Встречи подключён по обычным правилам
 
 ### Requirement: Повторная установка безопасна
-Повторный `spook install` SHALL оставить юнит, значок и ссылки на Скиллы без изменений и заново выполнить шаги установки, в том числе подготовку моделей и перезапуск службы.
+Повторный `spook install` SHALL оставить юнит, значок и ссылку на Скилл Встречи без изменений и заново выполнить шаги установки, в том числе подготовку моделей и перезапуск службы.
 
 #### Scenario: Вторая установка подряд
 - **GIVEN** `spook install` уже выполнен
@@ -75,4 +85,4 @@
 - **GIVEN** `spook install` выполнен, рядом с подключённым Скиллом лежит чужой — папка `~/.claude/skills/someone-else`
 - **WHEN** выполняется `spook uninstall`
 - **THEN** по порядку вызваны: `systemctl --user disable --now spook.service`, `systemctl --user daemon-reload`, `update-desktop-database ~/.local/share/applications`, `uv tool uninstall spook`
-- **AND** юнита, значка и ссылки `~/.claude/skills/spook-probe` больше нет, папка `someone-else` на месте
+- **AND** юнита, значка и ссылки `~/.claude/skills/spook-meeting` больше нет, папка `someone-else` на месте

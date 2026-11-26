@@ -42,14 +42,14 @@ def sample(name: str) -> tuple[np.ndarray, dict]:
 def feed(spook, samples: np.ndarray) -> None:
     step = int(CHUNK_SECONDS * SAMPLE_RATE)
     for offset in range(0, len(samples), step):
-        spook.audio.feed(samples[offset : offset + step])
+        spook.feed_system(samples[offset : offset + step])
 
 
 def test_phrase_pause_phrase_from_real_speech_gives_utterances_at_phrase_boundaries(spook):
     audio, source = sample("ppp_0700ms.wav")
     phrases = source["phrases"]
     spook.recognizer.say(*(f"Фраза {number}." for number in range(1, len(phrases) + 1)))
-    spook.start_lecture()
+    spook.start_meeting()
 
     feed(spook, np.concatenate([audio, np.zeros(SAMPLE_RATE, dtype=np.float32)]))
     spook.wait_until(lambda: len(spook.recognizer.heard) == len(phrases), timeout=10)
@@ -61,7 +61,7 @@ def test_phrase_pause_phrase_from_real_speech_gives_utterances_at_phrase_boundar
 
 def test_pause_of_half_a_second_does_not_cut_real_speech(spook):
     audio, _ = sample("ppp_0500ms.wav")
-    spook.start_lecture()
+    spook.start_meeting()
 
     feed(spook, np.concatenate([audio, np.zeros(SAMPLE_RATE, dtype=np.float32)]))
     spook.wait_until(lambda: len(spook.recognizer.heard) >= 1, timeout=10)
@@ -74,7 +74,7 @@ def test_pause_of_half_a_second_does_not_cut_real_speech(spook):
 def test_long_real_speech_without_pauses_is_cut_before_20_seconds_between_sentences(spook):
     audio, source = sample("speech_45s.wav")
     sentence_ends = [part["end"] for part in source["glued"]]
-    spook.start_lecture()
+    spook.start_meeting()
 
     feed(spook, audio)
     spook.stop()

@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator, Callable
 
-from fastapi import FastAPI, Form, Request
+from fastapi import Depends, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, PackageLoader, select_autoescape
@@ -107,13 +107,14 @@ def create_app(
             return _rejected(render, str(rejected))
         return HTMLResponse("")
 
+    async def meeting_requested(request: Request) -> bool:
+        return (await request.form()).get("kind", "meeting") == "meeting"
+
     @app.post("/session/start", response_class=HTMLResponse)
-    def start_session(kind: str = Form(), topic: str = Form(""), link: str = Form("")) -> HTMLResponse:
-        try:
-            session_kind = SessionKind(kind)
-        except ValueError:
+    def start_session(meeting: bool = Depends(meeting_requested), topic: str = Form("")) -> HTMLResponse:
+        if not meeting:
             return _rejected(render, "Неизвестный вид Сессии")
-        return session_command(lambda: service.start(session_kind, topic=topic, link=link))
+        return session_command(lambda: service.start(topic=topic))
 
     @app.post("/session/pause", response_class=HTMLResponse)
     def pause_session() -> HTMLResponse:
@@ -130,10 +131,6 @@ def create_app(
     @app.post("/session/topic", response_class=HTMLResponse)
     def set_topic(topic: str = Form("")) -> HTMLResponse:
         return session_command(lambda: service.set_topic(topic))
-
-    @app.post("/session/link", response_class=HTMLResponse)
-    def set_link(link: str = Form("")) -> HTMLResponse:
-        return session_command(lambda: service.set_link(link))
 
     def session_note() -> Path | None:
         view = service.view()
@@ -157,19 +154,6 @@ def create_app(
         except notes_module.NoteRefused as refused:
             return _rejected(render, str(refused))
         return HTMLResponse(render("_done.html", text=f"Открываю в Obsidian: {path.stem}"))
-
-    @app.post("/notes/wiki", response_class=HTMLResponse)
-    def open_wiki_page(note: str = Form("")) -> HTMLResponse:
-        settings = load_settings()
-        try:
-            path, kind = notes_module.find_note(settings, note)
-            if kind is not SessionKind.LECTURE:
-                raise notes_module.NoteRefused("Страница Вики есть только у Лекции")
-            uri = notes_module.wiki_page_uri(settings.programs.wiki, path.stem)
-            notes_module.open_uri(settings.programs.open, uri)
-        except notes_module.NoteRefused as refused:
-            return _rejected(render, str(refused))
-        return HTMLResponse(render("_done.html", text=f"Открываю страницу Вики: {path.stem}"))
 
     @app.post("/notes/agent", response_class=HTMLResponse)
     def run_agent(

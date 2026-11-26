@@ -1,21 +1,24 @@
 from __future__ import annotations
 
+import pytest
 
-def test_start_of_unknown_kind_is_rejected_and_session_does_not_start(spook):
-    response = spook.http.post(f"{spook.base_url}/session/start", data={"kind": "podcast"})
+
+@pytest.mark.parametrize("kind", ["lecture", "podcast", ""])
+def test_start_of_unknown_kind_is_rejected_and_session_does_not_start(spook, kind):
+    response = spook.http.post(f"{spook.base_url}/session/start", data={"kind": kind})
 
     assert response.status_code == 409
     assert ">Неизвестный вид Сессии<" in response.text
     page = spook.page().text
     assert "нет Сессии" in page and ">Старт</button>" in page
     assert spook.audio.active_sources == set()
-    assert not spook.lectures_dir.exists() and not spook.meetings_dir.exists()
+    assert not spook.meetings_dir.exists()
     assert not (spook.state_dir / "session.json").exists()
 
 
 def test_pause_and_resume_out_of_place_give_reasons_by_state_and_paused_session_stays_paused(spook):
     pause_without_session = spook.pause()
-    spook.start_lecture()
+    spook.start_meeting()
     resume_while_running = spook.resume()
     spook.pause()
     pause_while_paused = spook.pause()

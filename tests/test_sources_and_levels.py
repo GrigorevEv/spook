@@ -14,7 +14,7 @@ def sine(seconds: float, amplitude: float, frequency: float = 440.0) -> np.ndarr
 
 
 def test_state_during_session_names_source_and_its_device(spook):
-    spook.start_lecture()
+    spook.start_meeting()
 
     with spook.events() as events:
         state = events.next_event()
@@ -30,12 +30,12 @@ def test_state_during_session_names_source_and_its_device(spook):
 
 
 def test_levels_event_carries_rms_and_peak_of_source_signal(spook):
-    spook.start_lecture()
+    spook.start_meeting()
 
     with spook.events() as events:
         events.wait_for("state")
-        spook.audio.feed(sine(0.5, amplitude=0.5))
-        levels = events.wait_for("levels")
+        spook.feed_system(sine(0.5, amplitude=0.5))
+        levels = events.wait_for("levels", containing="system")
 
     data = json.loads(levels.data)
     assert data["system"]["rms"] == pytest.approx(0.3536, abs=0.001)
@@ -43,11 +43,11 @@ def test_levels_event_carries_rms_and_peak_of_source_signal(spook):
 
 
 def test_silence_gives_zero_level(spook):
-    spook.start_lecture()
+    spook.start_meeting()
 
     with spook.events() as events:
         events.wait_for("state")
-        spook.audio.feed(np.zeros(SAMPLE_RATE // 10, dtype=np.float32))
-        levels = events.wait_for("levels")
+        spook.feed_system(np.zeros(SAMPLE_RATE // 10, dtype=np.float32))
+        levels = events.wait_for("levels", containing="system")
 
     assert json.loads(levels.data) == {"system": {"rms": 0.0, "peak": 0.0}}

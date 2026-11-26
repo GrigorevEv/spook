@@ -2,70 +2,53 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from conftest import SseEvent, speech
 
-NOTE_NAME = "2026-11-06 14-02 Лекция"
+NOTE_NAME = "2026-11-06 14-02 Встреча"
 SAMPLES_DIR = Path(__file__).parent / "data" / "claude"
 
 
 def run_agent(spook, scenario: str, until: str) -> SseEvent:
     spook.agent.play(scenario)
     spook.recognizer.say("Реплика.")
-    spook.start_lecture()
+    spook.start_meeting()
     with spook.events() as events:
-        spook.audio.feed(speech(20))
+        spook.feed_system(speech(20))
         events.wait_for("paragraph", containing="Реплика.")
         spook.stop()
         return events.wait_for("agent", containing=until)
 
 
 def journal(spook) -> str:
-    return (spook.state_dir / "agent" / "lecture" / f"{NOTE_NAME}.log").read_text(encoding="utf-8")
+    return (spook.state_dir / "agent" / "meeting" / f"{NOTE_NAME}.log").read_text(encoding="utf-8")
 
 
 def test_meeting_agent_works_in_meetings_folder(spook):
-    spook.agent.play("summary")
-    spook.recognizer.say("Привет.")
-    spook.start_meeting()
-    with spook.events() as events:
-        spook.audio.feed(speech(20))
-        events.wait_for("paragraph", containing="Привет.")
-        spook.stop()
-        events.wait_for("agent", containing="готово")
+    run_agent(spook, "summary", until="готово")
 
     assert [call["cwd"] for call in spook.agent.calls()] == [str(spook.meetings_dir)]
 
 
-def denied_rules(*folders_then_wiki) -> list[str]:
-    *folders, wiki = folders_then_wiki
-    return [
-        *(f"Edit(/{folder}/**/.claude/**)" for folder in folders),
-        f"Edit(/{wiki}/_tools/**)",
-        f"Edit(/{wiki}/_templates/**)",
-    ]
+@pytest.mark.parametrize("custom_cwd", [False, True], ids=["meetings-folder", "other-folder"])
+def test_agent_is_denied_editing_claude_settings_and_wiki_tools(spook, tmp_path, custom_cwd):
+    folders = [spook.meetings_dir, spook.wiki_dir]
+    if custom_cwd:
+        cwd = tmp_path / "agent"
+        cwd.mkdir()
+        spook.write_settings(meeting={"agent_cwd": str(cwd)})
+        folders.insert(0, cwd)
 
-
-def test_lecture_agent_is_denied_editing_claude_settings_and_wiki_tools_whatever_skill_allows(spook):
     run_agent(spook, "summary", until="готово")
 
     [call] = spook.agent.calls()
     flag = call["argv"].index("--disallowedTools")
-    assert call["argv"][flag + 1 :] == denied_rules(spook.wiki_dir, spook.meetings_dir, spook.lectures_dir, spook.wiki_dir)
-
-
-def test_meeting_agent_is_denied_the_same_and_its_folder_claude_settings(spook):
-    spook.agent.play("summary")
-    spook.recognizer.say("Привет.")
-    spook.start_meeting()
-    with spook.events() as events:
-        spook.audio.feed(speech(20))
-        events.wait_for("paragraph", containing="Привет.")
-        spook.stop()
-        events.wait_for("agent", containing="готово")
-
-    [call] = spook.agent.calls()
-    flag = call["argv"].index("--disallowedTools")
-    rules = denied_rules(spook.meetings_dir, spook.lectures_dir, spook.wiki_dir, spook.wiki_dir)
+    rules = [
+        *(f"Edit(/{folder}/**/.claude/**)" for folder in folders),
+        f"Edit(/{spook.wiki_dir}/_tools/**)",
+        f"Edit(/{spook.wiki_dir}/_templates/**)",
+    ]
     assert call["argv"][flag + 1 : flag + 1 + len(rules)] == rules
     assert call["argv"][flag + 1 + len(rules)] == "--append-system-prompt-file"
 
@@ -144,8 +127,8 @@ def test_launch_can_be_wrapped_by_command_from_settings_with_timeout_in_seconds(
 
 SKILL_WITH_MODEL = (
     "---\n"
-    "name: spook-lecture\n"
-    "description: Выжимка Лекции.\n"
+    "name: spook-meeting\n"
+    "description: Выжимка Встречи.\n"
     "model: sonnet\n"
     "effort: high\n"
     "allowed-tools:\n"
@@ -156,12 +139,12 @@ SKILL_WITH_MODEL = (
 )
 
 MODEL_IN_SKILL_WARNING = (
-    "В шапке Скилла spook-lecture указаны model, effort — они перебивают модель и effort из настроек Spook."
+    "В шапке Скилла spook-meeting указаны model, effort — они перебивают модель и effort из настроек Spook."
 )
 
 
 def test_model_and_effort_in_project_skill_header_give_warning_on_page_and_in_journal(spook):
-    skill = spook.wiki_dir / ".claude" / "skills" / "spook-lecture" / "SKILL.md"
+    skill = spook.meetings_dir / ".claude" / "skills" / "spook-meeting" / "SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text(SKILL_WITH_MODEL, encoding="utf-8")
 
@@ -173,17 +156,17 @@ def test_model_and_effort_in_project_skill_header_give_warning_on_page_and_in_jo
 
 
 def test_model_in_user_skill_header_gives_warning(spook):
-    skill = spook.claude_config_dir / "skills" / "spook-lecture" / "SKILL.md"
+    skill = spook.claude_config_dir / "skills" / "spook-meeting" / "SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text(SKILL_WITH_MODEL.replace("effort: high\n", ""), encoding="utf-8")
 
     agent = run_agent(spook, "summary", until="готово")
 
-    assert "В шапке Скилла spook-lecture указаны model — они перебивают" in agent.data
+    assert "В шапке Скилла spook-meeting указаны model — они перебивают" in agent.data
 
 
 def test_model_mentioned_only_in_skill_text_below_header_gives_no_warning(spook):
-    skill = spook.wiki_dir / ".claude" / "skills" / "spook-lecture" / "SKILL.md"
+    skill = spook.meetings_dir / ".claude" / "skills" / "spook-meeting" / "SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text(
         SKILL_WITH_MODEL.replace("model: sonnet\n", "").replace("effort: high\n", "")
