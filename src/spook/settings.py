@@ -72,7 +72,6 @@ class ProgramSettings:
     claude: str = str(Path("~/.local/bin/claude").expanduser())
     notify: str = "notify-send"
     open: str = "xdg-open"
-    wiki: str = "python3 ~/learn/wiki/_tools/wiki_html.py"
 
 
 def _home(path: str) -> Path:

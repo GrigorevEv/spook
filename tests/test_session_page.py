@@ -15,15 +15,15 @@ def test_session_page_is_in_russian_with_start_button_timer_and_live_text(spook)
     assert "запис" not in html.lower()
 
 
-def test_page_during_session_shows_stop_button_and_lecture(spook):
-    spook.start_lecture()
+def test_page_during_session_shows_stop_button_and_meeting(spook):
+    spook.start_meeting()
     spook.clock.advance(65)
 
     html = spook.page().text
 
     assert ">Стоп</button>" in html
     assert ">Старт</button>" not in html
-    assert "Лекция" in html and "идёт" in html
+    assert "Встреча" in html and "идёт" in html
     assert ">0:01:05</time>" in html
 
 

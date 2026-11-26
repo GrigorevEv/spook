@@ -58,7 +58,7 @@ def find_session_note(raw: str | Path, folders: Iterable[tuple[SessionKind, Path
             links_outside = candidate.resolve().parent != folder.resolve()
             if links_outside or not candidate.is_file():
                 raise NoteNotFound(f"Заметки нет: {path.name}")
-            if "лекция" in read_properties(candidate.read_text(encoding="utf-8", errors="replace")).get("tags", ""):
+            if has_lecture_tag(read_properties(candidate.read_text(encoding="utf-8", errors="replace"))):
                 raise NoteNotFound(f"Это не Заметка Встречи: {path.name}")
         except OSError as error:
             raise NoteNotFound(f"Заметка недоступна: {error.strerror or error}") from error
@@ -70,11 +70,21 @@ def read_properties(text: str) -> dict[str, str]:
     lines = text.split("\n")
     closing = _properties_end(lines)
     result: dict[str, str] = {}
+    last_key = ""
     for line in lines[1:closing] if closing is not None else ():
+        if last_key == "tags" and line.lstrip().startswith("- "):
+            result["tags"] += "," + line.lstrip()[2:].strip()
+            continue
         key, colon, value = line.partition(":")
         if colon:
-            result[key.strip()] = value.strip().strip('"').strip("'")
+            last_key = key.strip()
+            result[last_key] = value.strip().strip('"').strip("'")
     return result
+
+
+def has_lecture_tag(properties: dict[str, str]) -> bool:
+    tags = properties.get("tags", "").strip("[]")
+    return any(tag.strip().strip("'\"").casefold() == "лекция" for tag in tags.split(","))
 
 
 def transcript_line(lines: list[str]) -> int | None:

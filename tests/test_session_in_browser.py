@@ -23,17 +23,17 @@ def live_text_of(page: Page):
     return page.get_by_label("Живой текст")
 
 
-def test_lecture_from_start_to_stop_on_demo_launch(demo, page, screenshot):
+def test_meeting_from_start_to_stop_on_demo_launch(demo, page, screenshot):
     page.goto(demo.base_url)
     expect(status_of(page)).to_contain_text("нет Сессии")
 
     page.get_by_role("button", name="Старт").click()
 
-    expect(status_of(page)).to_contain_text("Лекция")
+    expect(status_of(page)).to_contain_text("Встреча")
     expect(status_of(page)).to_contain_text("идёт")
     expect(live_text_of(page)).to_contain_text("Spook слушает звук на компьютере")
-    expect(live_text_of(page)).to_contain_text("бывает двух видов: Встреча или Лекция")
-    screenshot(page, "лекция-идёт")
+    expect(live_text_of(page)).to_contain_text("Встреча начинается по кнопке «Старт».")
+    screenshot(page, "встреча-идёт")
 
     page.get_by_role("button", name="Стоп").click()
 
@@ -53,9 +53,8 @@ def test_meeting_from_start_through_pause_to_summary_and_opening_note_in_obsidia
     spook.recognizer.say("Хорошо, продолжаем.")
     page.goto(spook.base_url)
 
-    page.get_by_role("group", name="Вид Сессии").get_by_text("Встреча").click()
-    expect(page.get_by_role("radio", name="Встреча")).to_be_checked()
-    expect(page.get_by_role("textbox", name="Ссылка")).to_be_hidden()
+    expect(page.get_by_role("radio")).to_have_count(0)
+    expect(page.get_by_role("textbox", name="Ссылка")).to_have_count(0)
     page.get_by_role("textbox", name="Тема").fill("Планёрка")
     page.get_by_role("button", name="Старт").click()
 
@@ -76,7 +75,7 @@ def test_meeting_from_start_through_pause_to_summary_and_opening_note_in_obsidia
 
     expect(status_of(page)).to_contain_text("идёт")
     expect(live_text_of(page)).to_contain_text("Пауза 14:02–14:07")
-    spook.audio.feed(speech(20), Source.SYSTEM)
+    spook.feed_system(speech(20))
     expect(live_text_of(page)).to_contain_text("14:07 Собеседники Хорошо, продолжаем.")
 
     page.get_by_role("button", name="Стоп").click()
@@ -104,23 +103,23 @@ def test_closing_all_tabs_keeps_session_and_new_tab_shows_everything(spook, cont
     tab.goto(spook.base_url)
     tab.get_by_role("button", name="Старт").click()
     expect(status_of(tab)).to_contain_text("идёт")
-    spook.audio.feed(speech(20))
+    spook.feed_system(speech(20))
     expect(live_text_of(tab)).to_contain_text("При открытой вкладке.")
 
     tab.close()
-    spook.audio.feed(speech(40))
+    spook.feed_system(speech(40))
     spook.wait_until(lambda: "Пока вкладок не было." in spook.page().text)
     spook.clock.advance(65)
 
     new_tab = context.new_page()
     new_tab.goto(spook.base_url)
 
-    expect(status_of(new_tab)).to_contain_text("Лекция")
+    expect(status_of(new_tab)).to_contain_text("Встреча")
     expect(status_of(new_tab)).to_contain_text("идёт")
     expect(status_of(new_tab).get_by_role("time")).to_have_text(re.compile(r"^0:01:0[5-9]$"))
     expect(live_text_of(new_tab)).to_contain_text("При открытой вкладке.")
     expect(live_text_of(new_tab)).to_contain_text("Пока вкладок не было.")
-    spook.audio.feed(speech(40))
+    spook.feed_system(speech(40))
     expect(live_text_of(new_tab)).to_contain_text("После новой вкладки.")
     text = live_text_of(new_tab).inner_text()
     assert text.count("При открытой вкладке.") == 1
@@ -134,12 +133,12 @@ def test_page_reconnects_by_itself_after_event_stream_breaks(spook, page, screen
     page.goto(spook.base_url)
     page.get_by_role("button", name="Старт").click()
     expect(status_of(page)).to_contain_text("идёт")
-    spook.audio.feed(speech(20))
+    spook.feed_system(speech(20))
     expect(live_text_of(page)).to_contain_text("До обрыва.")
     page.evaluate("() => { window.reopened = 0; document.addEventListener('htmx:sseOpen', () => window.reopened++); }")
 
     spook.restart_server()
-    spook.audio.feed(speech(40))
+    spook.feed_system(speech(40))
     spook.wait_until(lambda: "Во время обрыва." in spook.page().text)
     spook.clock.advance(80)
 
@@ -147,7 +146,7 @@ def test_page_reconnects_by_itself_after_event_stream_breaks(spook, page, screen
     expect(live_text_of(page)).to_contain_text("Во время обрыва.")
     expect(status_of(page)).to_contain_text("идёт")
     expect(status_of(page).get_by_role("time")).to_have_text(re.compile(r"^0:01:2\d$"))
-    spook.audio.feed(speech(40))
+    spook.feed_system(speech(40))
     expect(live_text_of(page)).to_contain_text("После восстановления.")
     text = live_text_of(page).inner_text()
     assert text.count("До обрыва.") == 1

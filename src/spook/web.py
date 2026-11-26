@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator, Callable
 
-from fastapi import FastAPI, Form, Request
+from fastapi import Depends, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, PackageLoader, select_autoescape
@@ -107,13 +107,14 @@ def create_app(
             return _rejected(render, str(rejected))
         return HTMLResponse("")
 
+    async def meeting_requested(request: Request) -> bool:
+        return (await request.form()).get("kind", "meeting") == "meeting"
+
     @app.post("/session/start", response_class=HTMLResponse)
-    def start_session(kind: str = Form("meeting"), topic: str = Form("")) -> HTMLResponse:
-        try:
-            session_kind = SessionKind(kind)
-        except ValueError:
+    def start_session(meeting: bool = Depends(meeting_requested), topic: str = Form("")) -> HTMLResponse:
+        if not meeting:
             return _rejected(render, "Неизвестный вид Сессии")
-        return session_command(lambda: service.start(session_kind, topic=topic))
+        return session_command(lambda: service.start(topic=topic))
 
     @app.post("/session/pause", response_class=HTMLResponse)
     def pause_session() -> HTMLResponse:

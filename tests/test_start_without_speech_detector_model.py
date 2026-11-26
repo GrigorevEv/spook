@@ -51,7 +51,7 @@ def speech_detector(speech_detector_model_dir: Path, network_attempts: list[str]
 def test_start_without_speech_detector_model_goes_to_no_network_and_creates_no_model_folder(
     spook, network_attempts, speech_detector_model_dir
 ):
-    spook.start_lecture()
+    spook.start_meeting()
 
     assert network_attempts == []
     assert not speech_detector_model_dir.exists()
@@ -60,18 +60,15 @@ def test_start_without_speech_detector_model_goes_to_no_network_and_creates_no_m
 def test_start_without_speech_detector_model_is_rejected_with_its_folder_and_leaves_no_session(
     spook, speech_detector_model_dir
 ):
-    lecture = spook.start_lecture()
     meeting = spook.start_meeting()
 
     reason = f">Модель детектора речи не скачана в {speech_detector_model_dir}: выполните `spook prepare`<"
-    assert lecture.status_code == 409
-    assert reason in lecture.text
     assert meeting.status_code == 409
     assert reason in meeting.text
     page = spook.page().text
     assert "нет Сессии" in page and ">Старт</button>" in page
     assert spook.audio.active_sources == set()
-    assert not spook.lectures_dir.exists() and not spook.meetings_dir.exists()
+    assert not spook.meetings_dir.exists()
     assert not (spook.state_dir / "session.json").exists()
 
 
@@ -82,11 +79,11 @@ def test_start_after_speech_detector_model_is_downloaded_begins_session_without_
     downloaded = next((folder / MODEL_FILE for folder in MODEL_DIRS if (folder / MODEL_FILE).is_file()), None)
     if downloaded is None:
         pytest.skip(f"модели Silero VAD нет ни в одном из каталогов: {', '.join(map(str, MODEL_DIRS))}")
-    assert spook.start_lecture().status_code == 409
+    assert spook.start_meeting().status_code == 409
 
     speech_detector_model_dir.mkdir(parents=True)
     shutil.copyfile(downloaded, speech_detector_model_dir / MODEL_FILE)
-    response = spook.start_lecture()
+    response = spook.start_meeting()
 
     assert response.status_code == 200
     assert "идёт" in spook.page().text

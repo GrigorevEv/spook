@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from spook.agent import AgentJob, AgentQueue, SummaryState
-from spook.note import Note, NoteNotFound, find_session_note, parse_name, read_properties
+from spook.note import Note, NoteNotFound, find_session_note, has_lecture_tag, parse_name, read_properties
 from spook.settings import EFFORTS, SessionKind, Settings
 
 _TIME = re.compile(r"^(\d{1,2}):(\d{2})$")
@@ -43,7 +43,6 @@ class NoteEntry:
 
 
 OPEN_TIMEOUT_SECONDS = 10
-WIKI_TIMEOUT_SECONDS = 30
 
 
 class NoteRefused(Exception):
@@ -167,7 +166,7 @@ def describe(path: Path, folder_kind: SessionKind, agent: AgentQueue, session_no
     except OSError:
         return None
     properties = read_properties(text)
-    if "лекция" in properties.get("tags", ""):
+    if has_lecture_tag(properties):
         return None
     start = properties.get("start") or f"{name.hour}:{name.minute}"
     note = Note(path)

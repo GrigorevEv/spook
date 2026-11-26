@@ -198,3 +198,33 @@ def test_uninstall_removes_service_menu_entry_skill_links_and_tool(tmp_path, hom
     assert not (home / ".local/share/applications/spook.desktop").exists()
     assert not (home / ".claude/skills/spook-probe").is_symlink()
     assert foreign.is_dir()
+
+
+def test_install_removes_own_old_lecture_skill_link_and_installs_meeting_skill(tmp_path, home):
+    repo = make_repo(tmp_path, "spook-meeting")
+    skills = home / ".claude/skills"
+    skills.mkdir(parents=True)
+    old = skills / "spook-lecture"
+    old.symlink_to(repo / "skills/spook-lecture")
+
+    install(repo, home=home, port=8765, run=Recorder())
+
+    assert not old.is_symlink()
+    assert (skills / "spook-meeting").resolve() == repo / "skills/spook-meeting"
+
+
+@pytest.mark.parametrize("linked", [False, True], ids=["directory", "foreign-link"])
+def test_install_keeps_users_old_lecture_skill(tmp_path, home, linked):
+    repo = make_repo(tmp_path, "spook-meeting")
+    old = home / ".claude/skills/spook-lecture"
+    folder = tmp_path / "my-skill" if linked else old
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text("Мой Скилл.", encoding="utf-8")
+    if linked:
+        old.parent.mkdir(parents=True)
+        old.symlink_to(folder)
+
+    install(repo, home=home, port=8765, run=Recorder())
+
+    assert old.is_symlink() == linked
+    assert (old / "SKILL.md").read_text(encoding="utf-8") == "Мой Скилл."

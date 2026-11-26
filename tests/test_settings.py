@@ -9,11 +9,9 @@ def test_settings_without_file_have_defaults_from_spec(tmp_path: Path):
     settings = load_settings(tmp_path / "нет такого файла.toml")
 
     assert settings.port == 8765
-    assert settings.lecture.folder == Path.home() / "learn/wiki/lectures"
-    assert settings.lecture.skill == "spook-lecture"
     assert settings.meeting.folder == Path.home() / "Documents/notes/работа"
     assert settings.meeting.skill == "spook-meeting"
-    assert (settings.lecture.model, settings.lecture.effort) == ("opus", "high")
+    assert (settings.meeting.model, settings.meeting.effort) == ("opus", "high")
     assert settings.auto_stop_minutes == 5
     assert settings.terms_dictionary == Path.home() / "Documents/notes/работа/Словарь терминов.md"
     assert settings.recognition.max_utterance_seconds == 20
@@ -35,8 +33,8 @@ def test_partial_settings_file_overrides_only_given_keys(tmp_path: Path):
         "port = 9000\n"
         "auto_stop_minutes = 7\n"
         "\n"
-        "[lecture]\n"
-        'folder = "~/lectures"\n'
+        "[meeting]\n"
+        'folder = "~/meetings"\n'
         'effort = "medium"\n'
         "\n"
         "[programs]\n"
@@ -48,9 +46,8 @@ def test_partial_settings_file_overrides_only_given_keys(tmp_path: Path):
 
     assert settings.port == 9000
     assert settings.auto_stop_minutes == 7
-    assert settings.lecture.folder == Path.home() / "lectures"
-    assert (settings.lecture.skill, settings.lecture.model, settings.lecture.effort) == ("spook-lecture", "opus", "medium")
-    assert settings.meeting.folder == Path.home() / "Documents/notes/работа"
+    assert settings.meeting.folder == Path.home() / "meetings"
+    assert (settings.meeting.skill, settings.meeting.model, settings.meeting.effort) == ("spook-meeting", "opus", "medium")
     assert settings.programs.claude == "/opt/claude/bin/claude"
     assert settings.programs.notify == "notify-send"
 

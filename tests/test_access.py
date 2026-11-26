@@ -36,19 +36,19 @@ def test_request_to_own_address_is_served(spook, name):
 @pytest.mark.parametrize("origin", ["http://attacker.example", "null", "http://localhost:1"])
 def test_command_from_foreign_page_is_rejected_and_session_does_not_start(spook, origin):
     response = spook.http.post(
-        f"{spook.base_url}/session/start", data={"kind": "lecture"}, headers={"Origin": origin}
+        f"{spook.base_url}/session/start", data={"kind": "meeting"}, headers={"Origin": origin}
     )
 
     assert response.status_code == 403
     assert response.text == "Запрос с чужой страницы отклонён"
     assert "нет Сессии" in spook.page().text
-    assert not spook.lectures_dir.exists()
+    assert not spook.meetings_dir.exists()
 
 
 @pytest.mark.parametrize("name", ["localhost", "127.0.0.1"])
 def test_command_from_own_page_starts_session(spook, name):
     response = spook.http.post(
-        f"{spook.base_url}/session/start", data={"kind": "lecture"}, headers=own_page(spook, name)
+        f"{spook.base_url}/session/start", data={"kind": "meeting"}, headers=own_page(spook, name)
     )
 
     assert response.status_code == 200, response.text
@@ -80,7 +80,7 @@ def test_event_stream_from_foreign_page_is_rejected(spook, headers):
 
 
 def test_event_stream_from_own_page_opens_with_current_state(spook):
-    spook.start_lecture()
+    spook.start_meeting()
     headers = {
         "Host": f"localhost:{spook.settings.port}",
         "Accept": "text/event-stream",

@@ -6,8 +6,8 @@ from html import unescape
 
 from conftest import NO_SPEECH, speech
 
-FIRST_NOTE = "2026-11-06 14-02 Лекция"
-SECOND_NOTE = "2026-11-06 15-02 Лекция"
+FIRST_NOTE = "2026-11-06 14-02 Встреча"
+SECOND_NOTE = "2026-11-06 15-02 Встреча"
 
 
 @dataclass(frozen=True)
@@ -36,10 +36,10 @@ def jobs_on_screen(spook) -> dict[str, ShownJob]:
 
 def test_session_without_utterances_leaves_agent_block_empty(spook):
     spook.recognizer.say(NO_SPEECH)
-    spook.start_lecture()
+    spook.start_meeting()
 
     with spook.events() as events:
-        spook.audio.feed(speech(20))
+        spook.feed_system(speech(20))
         spook.stop()
         events.wait_for("state", containing="нет Сессии")
 
@@ -49,19 +49,19 @@ def test_session_without_utterances_leaves_agent_block_empty(spook):
 
 def test_screen_shows_running_for_first_note_and_queued_for_second_then_both_done_in_order(spook):
     spook.agent.play("wait")
-    spook.recognizer.say("Первая лекция.")
-    spook.start_lecture()
+    spook.recognizer.say("Первая встреча.")
+    spook.start_meeting()
     with spook.events() as events:
-        spook.audio.feed(speech(20))
-        events.wait_for("paragraph", containing="Первая лекция.")
+        spook.feed_system(speech(20))
+        events.wait_for("paragraph", containing="Первая встреча.")
         spook.stop()
         events.wait_for("agent", containing="работает")
     spook.clock.advance(60 * 60)
-    spook.recognizer.say("Вторая лекция.")
-    spook.start_lecture()
+    spook.recognizer.say("Вторая встреча.")
+    spook.start_meeting()
     with spook.events() as events:
-        spook.audio.feed(speech(20))
-        events.wait_for("paragraph", containing="Вторая лекция.")
+        spook.feed_system(speech(20))
+        events.wait_for("paragraph", containing="Вторая встреча.")
         spook.stop()
         events.wait_for("agent", containing="в очереди")
 
@@ -73,6 +73,6 @@ def test_screen_shows_running_for_first_note_and_queued_for_second_then_both_don
     spook.agent.release()
     spook.wait_until(lambda: jobs_on_screen(spook) == {FIRST_NOTE: ShownJob("готово"), SECOND_NOTE: ShownJob("готово")})
     assert [call["argv"][1] for call in spook.agent.calls()] == [
-        f"/spook-lecture {spook.lectures_dir / FIRST_NOTE}.md",
-        f"/spook-lecture {spook.lectures_dir / SECOND_NOTE}.md",
+        f"/spook-meeting {spook.meetings_dir / FIRST_NOTE}.md",
+        f"/spook-meeting {spook.meetings_dir / SECOND_NOTE}.md",
     ]

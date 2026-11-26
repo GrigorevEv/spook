@@ -60,7 +60,7 @@ def stub_pw_dump(only_dir_on_path: Path, output: str) -> None:
 def test_start_is_rejected_when_there_is_no_default_output_device(spook, only_dir_on_path: Path):
     stub_pw_dump(only_dir_on_path, DUMP_WITHOUT_OUTPUT_DEVICE)
 
-    response = spook.start_lecture()
+    response = spook.start_meeting()
 
     assert response.status_code == 409
     assert "Нет устройства для захвата: Системный звук" in response.text
@@ -68,7 +68,7 @@ def test_start_is_rejected_when_there_is_no_default_output_device(spook, only_di
 
 
 def test_start_is_rejected_when_pipewire_is_unavailable(spook):
-    response = spook.start_lecture()
+    response = spook.start_meeting()
 
     assert response.status_code == 409
     assert "PipeWire недоступен" in response.text
@@ -79,7 +79,7 @@ def test_start_is_rejected_when_pinned_device_is_absent(spook, only_dir_on_path:
     with spook.settings_path.open("a", encoding="utf-8") as file:
         file.write('\n[sources]\nmic = "alsa_input.usb-mic"\nsystem = "alsa_output.usb-dac"\n')
 
-    response = spook.start_lecture()
+    response = spook.start_meeting()
 
     assert response.status_code == 409
     assert "Нет устройства для захвата: Системный звук" in response.text

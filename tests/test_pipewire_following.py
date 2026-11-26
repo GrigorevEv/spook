@@ -9,6 +9,7 @@ from spook.pipewire import PipeWireAudioInput
 
 SPEAKERS = ("alsa_output.speakers", "Колонки")
 HEADPHONES = ("alsa_output.usb-headphones", "Наушники USB")
+MICROPHONE = "alsa_input.test-mic"
 
 
 def dump(default: str, *sinks: tuple[str, str]) -> str:
@@ -18,7 +19,15 @@ def dump(default: str, *sinks: tuple[str, str]) -> str:
                 "id": 36,
                 "type": "PipeWire:Interface:Metadata",
                 "props": {"metadata.name": "default"},
-                "metadata": [{"subject": 0, "key": "default.audio.sink", "type": "Spa:String:JSON", "value": {"name": default}}],
+                "metadata": [
+                    {"subject": 0, "key": "default.audio.sink", "type": "Spa:String:JSON", "value": {"name": default}},
+                    {"subject": 0, "key": "default.audio.source", "type": "Spa:String:JSON", "value": {"name": MICROPHONE}},
+                ],
+            },
+            {
+                "id": 42,
+                "type": "PipeWire:Interface:Node",
+                "info": {"props": {"node.name": MICROPHONE, "node.description": "Микрофон", "media.class": "Audio/Source"}},
             },
             *(
                 {
@@ -94,7 +103,7 @@ def audio_input(pipewire: PipeWireStub) -> PipeWireAudioInput:
 
 def test_capture_moves_to_new_default_output_device(spook, pipewire: PipeWireStub):
     pipewire.set_devices(SPEAKERS[0], SPEAKERS, HEADPHONES)
-    assert spook.start_lecture().status_code == 200
+    assert spook.start_meeting().status_code == 200
 
     with spook.events() as events:
         events.wait_for("state", containing="Колонки")
@@ -106,16 +115,16 @@ def test_capture_moves_to_new_default_output_device(spook, pipewire: PipeWireStu
         events.wait_for("levels")
 
     assert "идёт" in state.data
-    assert "<em>0:00:00 Системный звук переключён на «Наушники USB»</em>" in mark.data
+    assert "<em>14:02 Системный звук переключён на «Наушники USB»</em>" in mark.data
     assert 'class="warning"' not in spook.page().text
-    assert pipewire.record_targets() == [SPEAKERS[0], HEADPHONES[0]]
+    assert pipewire.record_targets() == [SPEAKERS[0], MICROPHONE, HEADPHONES[0]]
 
 
 def test_pinned_capture_ignores_new_default(spook, pipewire: PipeWireStub):
     pipewire.set_devices(SPEAKERS[0], SPEAKERS, HEADPHONES)
     with spook.settings_path.open("a", encoding="utf-8") as file:
         file.write(f'\n[sources]\nsystem = "{SPEAKERS[0]}"\n')
-    assert spook.start_lecture().status_code == 200
+    assert spook.start_meeting().status_code == 200
 
     with spook.events() as events:
         events.wait_for("state", containing="Колонки")
@@ -126,12 +135,12 @@ def test_pinned_capture_ignores_new_default(spook, pipewire: PipeWireStub):
             assert events.wait_for("levels")
 
     assert "Наушники USB" not in spook.page().text
-    assert pipewire.record_targets() == [SPEAKERS[0]]
+    assert pipewire.record_targets() == [SPEAKERS[0], MICROPHONE]
 
 
 def test_lost_output_device_leaves_mark_and_warning_and_capture_continues_from_default(spook, pipewire: PipeWireStub):
     pipewire.set_devices(SPEAKERS[0], SPEAKERS, HEADPHONES)
-    assert spook.start_lecture().status_code == 200
+    assert spook.start_meeting().status_code == 200
 
     with spook.events() as events:
         events.wait_for("state", containing="Колонки")
@@ -143,6 +152,6 @@ def test_lost_output_device_leaves_mark_and_warning_and_capture_continues_from_d
 
     expected = "Системный звук: устройство «Колонки» пропало, захват продолжается с «Наушники USB»"
     assert "идёт" in state.data
-    assert f"<em>0:00:00 {expected}</em>" in mark.data
+    assert f"<em>14:02 {expected}</em>" in mark.data
     assert f'<p class="warning" role="alert">{expected}</p>' in spook.page().text
-    assert pipewire.record_targets() == [SPEAKERS[0], HEADPHONES[0]]
+    assert pipewire.record_targets() == [SPEAKERS[0], MICROPHONE, HEADPHONES[0]]

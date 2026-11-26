@@ -43,7 +43,7 @@ from pathlib import Path
 time.sleep({AGENT_SECONDS})
 prompt = sys.argv[sys.argv.index("-p") + 1]
 note = Path(prompt.split(" ", 1)[1])
-summary = "## О чём\\n\\nПоказ на подменах: здесь Выжимку вместо Агента пишет заглушка.\\n\\n"
+summary = "## Суть\\n\\nSpook захватывает Встречу.\\n\\n## Решения\\n\\nНет.\\n\\n## Задачи\\n\\nНет.\\n\\n## Открытые вопросы\\n\\nНет.\\n\\n"
 note.write_text(note.read_text(encoding="utf-8").replace("## Транскрипт", summary + "## Транскрипт", 1), encoding="utf-8")
 print("Заглушка Агента показа: Выжимка написана.")
 '''
@@ -74,6 +74,7 @@ def demo_programs(folder: Path) -> ProgramSettings:
 def demo_settings(folder: Path, port: int) -> Settings:
     return Settings(
         port=port,
+        wiki=folder / "wiki",
         terms_dictionary=folder / "Словарь терминов.md",
         meeting=KindSettings(folder / "работа", "spook-meeting"),
         recognition=RecognitionSettings(max_utterance_seconds=UTTERANCE_SECONDS),

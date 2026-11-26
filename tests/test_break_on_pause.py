@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from conftest import note_text, speech
 
-NOTE_NAME = "2026-11-06 14-02 Лекция"
+NOTE_NAME = "2026-11-06 14-02 Встреча"
 
 
 def test_long_break_while_paused_finishes_session_at_last_activity_without_pause_mark(spook):
     spook.agent.play("summary")
     spook.recognizer.say("До Паузы.")
-    spook.start_lecture()
+    spook.start_meeting()
     with spook.events() as events:
-        spook.audio.feed(speech(20))
+        spook.feed_system(speech(20))
         spook.clock.advance(20)
         events.wait_for("paragraph", containing="До Паузы.")
     spook.pause()
@@ -30,14 +30,14 @@ def test_long_break_while_paused_finishes_session_at_last_activity_without_pause
         "date: 2026-11-06\n"
         'start: "14:02"\n'
         'end: "14:04"\n'
-        "tags: [лекция]\n"
+        "tags: [встреча]\n"
         "---\n"
         "\n"
-        "## О чём\n"
+        "## Суть\n"
         "\n"
         "Про тесты.\n"
         "\n"
         "## Транскрипт\n"
-        "\n**0:00:00** До Паузы.\n"
+        "\n**14:02 Собеседники:** До Паузы.\n"
     )
     assert not (spook.state_dir / "session.json").exists()

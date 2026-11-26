@@ -35,11 +35,11 @@ class Sections(HTMLParser):
             self._section.append(data)
 
 
-def test_reminder_that_agent_permissions_live_in_skill_header_is_shown_in_meeting_and_lecture_sections(spook):
+def test_reminder_that_agent_permissions_live_in_skill_header_is_shown_in_meeting_section(spook):
     response = spook.http.get(f"{spook.base_url}/settings")
 
     assert response.status_code == 200
     sections = Sections(response.text).texts
     assert REMINDER in sections["Встреча"]
-    assert REMINDER in sections["Лекция"]
-    assert response.text.count(REMINDER) == 2
+    assert "Лекция" not in sections
+    assert response.text.count(REMINDER) == 1

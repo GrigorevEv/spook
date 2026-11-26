@@ -175,29 +175,29 @@ def files_open_for_writing(pid: int) -> list[str]:
 
 
 @pytest.fixture
-def audio_input(virtual_sink: str) -> PipeWireAudioInput:
-    return PipeWireAudioInput(targets={Source.SYSTEM: virtual_sink})
+def audio_input(virtual_sink: str, virtual_source: str) -> PipeWireAudioInput:
+    return PipeWireAudioInput(targets={Source.SYSTEM: virtual_sink, Source.MIC: virtual_source})
 
 
-def test_lecture_on_real_input_shows_output_device_and_streams_its_levels(spook, virtual_sink, tmp_path, caplog):
+def test_meeting_on_real_input_shows_output_device_and_streams_its_levels(spook, virtual_sink, tmp_path, caplog):
     caplog.set_level(logging.DEBUG, logger="spook")
     disk = DiskWatch(tmp_path, Path(tempfile.gettempdir()), Path("/var/tmp"), Path("/dev/shm"), Path.cwd())
 
-    response = spook.start_lecture()
+    response = spook.start_meeting()
     assert response.status_code == 200, response.text
 
     with spook.events() as events:
         state = events.next_event()
         assert state.name == "state" and OUTPUT_DESCRIPTION in state.data
 
-        quiet = json.loads(events.wait_for("levels").data)["system"]
+        quiet = json.loads(events.wait_for("levels", containing="system").data)["system"]
         assert quiet["rms"] < 0.001, "монитор виртуального устройства без воспроизведения должен быть тишиной"
 
         player = play_tone(virtual_sink, seconds=2.0)
         loud: list[dict[str, float]] = []
         deadline = time.monotonic() + 5
         while len(loud) < 5 and time.monotonic() < deadline:
-            level = json.loads(events.wait_for("levels").data)["system"]
+            level = json.loads(events.wait_for("levels", containing="system").data)["system"]
             if level["rms"] > 0.02:
                 loud.append(level)
 

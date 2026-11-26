@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 import uvicorn
 
-from spook.audio import AudioInput
+from spook.audio import AudioInput, Source
 from spook.clock import ManualClock
 from spook.cutting import SpeechDetectorFactory
 from spook.fakes import FakeAudioInput, LoudnessSpeechDetector, ScriptedRecognizer
@@ -36,17 +36,6 @@ NOTE_AFTER_START = (
     "---\n"
     "date: 2026-11-06\n"
     'start: "14:02"\n'
-    "tags: [лекция]\n"
-    "---\n"
-    "\n"
-    "## Транскрипт\n"
-)
-
-
-MEETING_NOTE_AFTER_START = (
-    "---\n"
-    "date: 2026-11-06\n"
-    'start: "14:02"\n'
     "tags: [встреча]\n"
     "---\n"
     "\n"
@@ -55,10 +44,6 @@ MEETING_NOTE_AFTER_START = (
 
 
 def note_text(spook: "Service") -> str:
-    return (spook.lectures_dir / "2026-11-06 14-02 Лекция.md").read_text(encoding="utf-8")
-
-
-def meeting_note_text(spook: "Service") -> str:
     return (spook.meetings_dir / "2026-11-06 14-02 Встреча.md").read_text(encoding="utf-8")
 
 
@@ -157,7 +142,7 @@ class Service:
     base_url: str
     settings: Settings
     settings_path: Path
-    lectures_dir: Path
+    wiki_dir: Path
     meetings_dir: Path
     state_dir: Path
     claude_config_dir: Path
@@ -167,14 +152,9 @@ class Service:
     agent: StubProgram
     notify: StubProgram
     opener: StubProgram
-    wiki: StubProgram
     http: httpx.Client = field(repr=False)
     restart_server: Callable[[], None] = field(repr=False)
     restart_service: Callable[[float], None] = field(repr=False)
-
-    @property
-    def wiki_dir(self) -> Path:
-        return self.lectures_dir.parent
 
     @property
     def programs(self) -> dict[str, str]:
@@ -182,16 +162,15 @@ class Service:
             "claude": str(self.agent.path),
             "notify": str(self.notify.path),
             "open": str(self.opener.path),
-            "wiki": str(self.wiki.path),
         }
 
-    def write_settings(self, lectures_dir: Path | None = None, **overrides) -> None:
+    def write_settings(self, **overrides) -> None:
         overrides.setdefault("meetings_dir", self.meetings_dir)
         overrides.setdefault("terms_dictionary", self.settings.terms_dictionary)
         write_settings(
             self.settings_path,
             self.settings.port,
-            lectures_dir or self.lectures_dir,
+            wiki_dir=self.wiki_dir,
             programs=self.programs,
             **overrides,
         )
@@ -199,19 +178,15 @@ class Service:
     def page(self) -> httpx.Response:
         return self.http.get(f"{self.base_url}/")
 
-    def start_lecture(self, topic: str = "", link: str = "") -> httpx.Response:
-        return self.http.post(
-            f"{self.base_url}/session/start", data={"kind": "lecture", "topic": topic, "link": link}
-        )
+    def feed_system(self, samples: np.ndarray) -> None:
+        self.audio.feed(np.zeros_like(samples), Source.MIC)
+        self.audio.feed(samples, Source.SYSTEM)
 
     def start_meeting(self, topic: str = "") -> httpx.Response:
-        return self.http.post(f"{self.base_url}/session/start", data={"kind": "meeting", "topic": topic})
+        return self.http.post(f"{self.base_url}/session/start", data={"topic": topic})
 
     def set_topic(self, topic: str) -> httpx.Response:
         return self.http.post(f"{self.base_url}/session/topic", data={"topic": topic})
-
-    def set_link(self, link: str) -> httpx.Response:
-        return self.http.post(f"{self.base_url}/session/link", data={"link": link})
 
     def pause(self) -> httpx.Response:
         return self.http.post(f"{self.base_url}/session/pause")
@@ -236,18 +211,18 @@ class Service:
 def write_settings(
     path: Path,
     port: int,
-    lectures_dir: Path,
+    wiki_dir: Path,
+    meetings_dir: Path,
     max_utterance_seconds: float | None = None,
     auto_stop_minutes: float | None = None,
     programs: dict[str, str] | None = None,
-    lecture: dict[str, str] | None = None,
+    meeting: dict[str, str] | None = None,
     recognition: dict[str, float] | None = None,
-    meetings_dir: Path | None = None,
     terms_dictionary: Path | None = None,
     agent: dict[str, object] | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    lecture_lines = "".join(f'{key} = "{value}"\n' for key, value in (lecture or {}).items())
+    meeting_lines = "".join(f'{key} = "{value}"\n' for key, value in (meeting or {}).items())
     recognition_keys = dict(recognition or {})
     if max_utterance_seconds is not None:
         recognition_keys["max_utterance_seconds"] = max_utterance_seconds
@@ -255,20 +230,18 @@ def write_settings(
     recognition_section = f"\n[recognition]\n{recognition_lines}" if recognition_lines else ""
     auto_stop = "" if auto_stop_minutes is None else f"auto_stop_minutes = {auto_stop_minutes}\n"
     terms = "" if terms_dictionary is None else f'terms_dictionary = "{terms_dictionary}"\n'
-    meeting = "" if meetings_dir is None else f'\n[meeting]\nfolder = "{meetings_dir}"\n'
     program_lines = "".join(f'{key} = "{value}"\n' for key, value in (programs or {}).items())
     agent_lines = "".join(f"{key} = {json.dumps(value, ensure_ascii=False)}\n" for key, value in (agent or {}).items())
     agent_section = f"\n[agent]\n{agent_lines}" if agent_lines else ""
     path.write_text(
         f"port = {port}\n"
-        f'wiki = "{lectures_dir.parent}"\n'
+        f'wiki = "{wiki_dir}"\n'
         f"{auto_stop}"
         f"{terms}"
         "\n"
-        "[lecture]\n"
-        f'folder = "{lectures_dir}"\n'
-        f"{lecture_lines}"
-        f"{meeting}"
+        "[meeting]\n"
+        f'folder = "{meetings_dir}"\n'
+        f"{meeting_lines}"
         f"{recognition_section}"
         f"{agent_section}"
         "\n"
@@ -302,7 +275,7 @@ def spook(
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[Service]:
     settings_path = tmp_path / "config" / "spook" / "settings.toml"
-    lectures_dir = tmp_path / "wiki" / "lectures"
+    wiki_dir = tmp_path / "wiki"
     meetings_dir = tmp_path / "notes" / "работа"
     state_dir = tmp_path / "state" / "spook"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
@@ -311,22 +284,21 @@ def spook(
     agent = StubProgram.create(tmp_path / "stubs", "claude")
     notify = StubProgram.create(tmp_path / "stubs", "notify")
     opener = StubProgram.create(tmp_path / "stubs", "open")
-    wiki = StubProgram.create(tmp_path / "stubs", "wiki")
-    programs = {"claude": str(agent.path), "notify": str(notify.path), "open": str(opener.path), "wiki": str(wiki.path)}
+    programs = {"claude": str(agent.path), "notify": str(notify.path), "open": str(opener.path)}
     write_settings(
         settings_path,
         free_port(),
-        lectures_dir,
+        wiki_dir=wiki_dir,
         programs=programs,
         meetings_dir=meetings_dir,
-        terms_dictionary=meetings_dir / "Словарь терминов.md",
+        terms_dictionary=meetings_dir.parent / "Словарь терминов.md",
     )
     settings = load_settings(settings_path)
 
     def load_stubbed_settings() -> Settings:
         loaded = load_settings(settings_path)
         programs = loaded.programs
-        for program in (programs.claude, programs.notify, programs.open, programs.wiki):
+        for program in (programs.claude, programs.notify, programs.open):
             assert Path(program).is_relative_to(tmp_path), f"внешняя программа вне заглушек: {program}"
         assert loaded.terms_dictionary.is_relative_to(tmp_path), "Словарь терминов вне временного каталога"
         return loaded
@@ -382,7 +354,7 @@ def spook(
             base_url=f"http://127.0.0.1:{settings.port}",
             settings=settings,
             settings_path=settings_path,
-            lectures_dir=lectures_dir,
+            wiki_dir=wiki_dir,
             meetings_dir=meetings_dir,
             state_dir=state_dir,
             claude_config_dir=claude_config_dir,
@@ -392,7 +364,6 @@ def spook(
             agent=agent,
             notify=notify,
             opener=opener,
-            wiki=wiki,
             http=http,
             restart_server=restart_server,
             restart_service=restart_service,

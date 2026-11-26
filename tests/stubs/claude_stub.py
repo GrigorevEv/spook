@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 SAMPLES_DIR = Path(__file__).parent.parent / "data" / "claude"
-SUMMARY = "## О чём\n\nПро тесты.\n"
+SUMMARY = "## Суть\n\nПро тесты.\n"
 TRANSCRIPT_HEADING = "## Транскрипт"
 TOPIC = "Репликация в Raft"
 
@@ -69,7 +69,7 @@ def main() -> int:
     print("Заглушка Агента: Выжимка написана.")
     if scenario in ("rewrite-transcript", "spoil-and-hang"):
         above, heading, _ = text.partition(TRANSCRIPT_HEADING)
-        text = f"{above}{heading}\n\n**0:00:00** Транскрипт переписан Агентом.\n"
+        text = f"{above}{heading}\n\n**14:02 Собеседники:** Транскрипт переписан Агентом.\n"
         print("Заглушка Агента: Транскрипт переписан.")
     elif scenario == "erase-heading":
         text = text.replace(f"{TRANSCRIPT_HEADING}\n", "", 1)

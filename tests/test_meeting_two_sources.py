@@ -6,17 +6,17 @@ import numpy as np
 
 from spook.audio import Source
 
-from conftest import MEETING_NOTE_AFTER_START, NO_SPEECH, NOTE_AFTER_START, SAMPLE_RATE, meeting_note_text, note_text, speech
+from conftest import NO_SPEECH, NOTE_AFTER_START, SAMPLE_RATE, note_text, speech
 
 
-def test_start_of_meeting_creates_note_in_meetings_folder_with_meeting_tag(spook):
+def test_explicit_meeting_from_previous_client_creates_meeting_note(spook):
     assert not spook.meetings_dir.exists()
 
-    response = spook.start_meeting()
+    response = spook.http.post(f"{spook.base_url}/session/start", data={"kind": "meeting"})
 
     assert response.status_code == 200, response.text
-    assert meeting_note_text(spook) == MEETING_NOTE_AFTER_START
-    assert not spook.lectures_dir.exists()
+    assert spook.audio.active_sources == {Source.SYSTEM, Source.MIC}
+    assert note_text(spook) == NOTE_AFTER_START
 
 
 def test_utterances_of_both_sources_get_speaker_and_clock_time(spook):
@@ -31,7 +31,7 @@ def test_utterances_of_both_sources_get_speaker_and_clock_time(spook):
         them = events.wait_for("paragraph", containing="Коллеги, всем привет")
         me = events.wait_for("paragraph", containing="Привет. По первому")
 
-    assert meeting_note_text(spook) == MEETING_NOTE_AFTER_START + (
+    assert note_text(spook) == NOTE_AFTER_START + (
         "\n**14:02 Собеседники:** Коллеги, всем привет, начинаем. Сегодня два вопроса…\n"
         "\n**14:03 Я:** Привет. По первому: вчера выкатили…\n"
     )
@@ -48,9 +48,9 @@ def test_change_of_speaker_starts_new_paragraph_even_without_silence(spook):
     spook.audio.feed(speech(60), Source.SYSTEM)
     spook.audio.feed(speech(80), Source.MIC)
     spook.audio.feed(speech(40), Source.SYSTEM)
-    spook.wait_until(lambda: "Хорошо, продолжаем." in meeting_note_text(spook))
+    spook.wait_until(lambda: "Хорошо, продолжаем." in note_text(spook))
 
-    assert meeting_note_text(spook) == MEETING_NOTE_AFTER_START + (
+    assert note_text(spook) == NOTE_AFTER_START + (
         "\n**14:02 Собеседники:** Коллеги, всем привет, начинаем. Сегодня два вопроса. Первый — релиз.\n"
         "\n**14:03 Я:** Привет. По первому: вчера выкатили.\n"
         "\n**14:03 Собеседники:** Хорошо, продолжаем.\n"
@@ -64,36 +64,34 @@ def test_later_mic_utterance_is_written_after_earlier_system_utterance_recognize
 
     spook.audio.feed(speech(40), Source.MIC)
     spook.wait_until(lambda: len(spook.recognizer.heard) == 2)
-    while_system_sound_pending = meeting_note_text(spook)
+    while_system_sound_pending = note_text(spook)
     spook.audio.feed(speech(20), Source.SYSTEM)
-    spook.wait_until(lambda: "Привет." in meeting_note_text(spook))
+    spook.wait_until(lambda: "Привет." in note_text(spook))
 
     assert [(heard.source, heard.start) for heard in spook.recognizer.heard] == [
         (Source.MIC, 0.0),
         (Source.MIC, 20.0),
         (Source.SYSTEM, 0.0),
     ]
-    assert while_system_sound_pending == MEETING_NOTE_AFTER_START
-    assert meeting_note_text(spook) == MEETING_NOTE_AFTER_START + (
+    assert while_system_sound_pending == NOTE_AFTER_START
+    assert note_text(spook) == NOTE_AFTER_START + (
         "\n**14:02 Собеседники:** Коллеги, всем привет.\n"
         "\n**14:02 Я:** Привет.\n"
     )
 
 
-def test_page_offers_kind_choice_before_start_and_kind_does_not_change_after_start(spook):
-    before = spook.page().text
-    assert 'type="radio" name="kind" value="meeting"' in before and "Встреча" in before
-    assert 'type="radio" name="kind" value="lecture"' in before and "Лекция" in before
+def test_start_defaults_to_meeting_and_rejects_the_old_lecture_request(spook):
+    page = spook.page().text
+    assert 'name="kind"' not in page and 'name="link"' not in page
+    assert "Лекция" not in page
+    old = spook.http.post(f"{spook.base_url}/session/start", data={"kind": "lecture"})
+    assert old.status_code == 409 and spook.audio.active_sources == set()
+    assert not spook.meetings_dir.exists()
 
-    assert spook.start_meeting().status_code == 200
-    response = spook.start_lecture()
+    assert spook.http.post(f"{spook.base_url}/session/start").status_code == 200
 
-    assert response.status_code == 409 and "Сессия уже идёт" in response.text
-    during = spook.page().text
-    assert 'name="kind"' not in during
-    assert '<span class="kind">Встреча</span>' in during
-    assert [path.name for path in spook.meetings_dir.iterdir()] == ["2026-11-06 14-02 Встреча.md"]
-    assert not spook.lectures_dir.exists()
+    assert spook.audio.active_sources == {Source.SYSTEM, Source.MIC}
+    assert "Встреча" in spook.page().text
 
 
 def test_pause_in_meeting_is_marked_by_clock_and_time_after_pause_goes_by_clock_too(spook):
@@ -116,25 +114,11 @@ def test_pause_in_meeting_is_marked_by_clock_and_time_after_pause_goes_by_clock_
 
     assert "<em>Пауза 14:02–14:07</em>" in mark.data
     assert "<time>14:07</time>" in after.data
-    assert meeting_note_text(spook) == MEETING_NOTE_AFTER_START + (
+    assert note_text(spook) == NOTE_AFTER_START + (
         "\n**14:02 Собеседники:** До Паузы.\n"
         "\n*Пауза 14:02–14:07*\n"
         "\n**14:07 Я:** После Паузы.\n"
     )
-
-
-def test_lecture_still_captures_only_system_sound_and_marks_no_speaker(spook):
-    spook.recognizer.say("Слова лектора.")
-    spook.start_lecture()
-    assert spook.audio.active_sources == {Source.SYSTEM}
-
-    spook.audio.feed(speech(20), Source.MIC)
-    spook.audio.feed(speech(20), Source.SYSTEM)
-    spook.wait_until(lambda: "Слова лектора." in note_text(spook))
-
-    assert [(heard.source, heard.start) for heard in spook.recognizer.heard] == [(Source.SYSTEM, 0.0)]
-    assert note_text(spook) == NOTE_AFTER_START + "\n**0:00:00** Слова лектора.\n"
-    assert not spook.meetings_dir.exists()
 
 
 def test_meeting_state_names_both_sources_and_levels_come_for_each(spook):
@@ -160,4 +144,5 @@ def test_start_of_meeting_without_microphone_is_rejected_with_reason_and_leaves_
     assert "нет Сессии" in spook.page().text
     assert list(spook.meetings_dir.iterdir()) == []
     assert spook.audio.active_sources == set()
-    assert spook.start_lecture().status_code == 200
+    spook.audio.unavailable.clear()
+    assert spook.start_meeting().status_code == 200

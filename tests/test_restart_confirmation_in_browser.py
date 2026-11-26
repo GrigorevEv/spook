@@ -18,7 +18,7 @@ def row_of(page: Page, topic: str):
 
 def test_restart_form_shows_warning_and_is_not_sent_until_confirmation_is_checked(spook, page, screenshot):
     note = write_note(
-        spook.lectures_dir, "2026-11-05 10-00 Репликация в Raft", "2026-11-05", "10:00", "11:05", "лекция", "## О чём\n\nПро Raft."
+        spook.meetings_dir, "2026-11-05 10-00 Репликация в Raft", "2026-11-05", "10:00", "11:05", "встреча", "## Суть\n\nПро Raft."
     )
     spook.agent.play("wait")
     sent = []
@@ -41,4 +41,4 @@ def test_restart_form_shows_warning_and_is_not_sent_until_confirmation_is_checke
     expect(row).to_contain_text("готово")
     assert sent == [f"{spook.base_url}/notes/agent"]
     [call] = spook.agent.calls()
-    assert call["argv"][1] == f"/spook-lecture {note}"
+    assert call["argv"][1] == f"/spook-meeting {note}"

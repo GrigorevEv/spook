@@ -56,22 +56,19 @@ def settings_form(spook) -> Form:
 def test_settings_screen_shows_current_values_from_settings_file(spook):
     spook.write_settings(
         auto_stop_minutes=1.5,
-        lecture={"skill": "my-lecture", "model": "sonnet", "effort": "max"},
+        meeting={"skill": "my-meeting", "model": "sonnet", "effort": "max"},
     )
 
     form = settings_form(spook)
 
     assert form.values["meeting.folder"] == str(spook.meetings_dir)
-    assert form.values["meeting.skill"] == "spook-meeting"
-    assert form.values["meeting.model"] == "opus"
-    assert form.values["meeting.effort"] == "high"
+    assert form.values["meeting.skill"] == "my-meeting"
+    assert form.values["meeting.model"] == "sonnet"
+    assert form.values["meeting.effort"] == "max"
     assert [value for value, _ in form.options["meeting.effort"]] == ["low", "medium", "high", "xhigh", "max"]
-    assert form.values["lecture.folder"] == str(spook.lectures_dir)
-    assert form.values["lecture.skill"] == "my-lecture"
-    assert form.values["lecture.model"] == "sonnet"
-    assert form.values["lecture.effort"] == "max"
+    assert not any(key.startswith("lecture.") for key in form.values)
     assert form.values["auto_stop_minutes"] == "1.5"
-    assert form.values["terms_dictionary"] == str(spook.meetings_dir / "Словарь терминов.md")
+    assert form.values["terms_dictionary"] == str(spook.settings.terms_dictionary)
     assert form.values["sources.system"] == ""
     assert form.values["sources.mic"] == ""
 
@@ -92,7 +89,7 @@ def test_every_screen_links_to_settings(spook):
 def test_settings_screen_reminds_that_skill_permissions_live_in_skill_headers(spook):
     html = spook.http.get(f"{spook.base_url}/settings").text
 
-    assert html.count("в шапке Скилла") == 2
+    assert html.count("в шапке Скилла") == 1
 
 
 def test_saving_writes_settings_file_and_keeps_keys_that_are_not_on_screen(spook, tmp_path):
@@ -108,7 +105,6 @@ def test_saving_writes_settings_file_and_keeps_keys_that_are_not_on_screen(spook
         meeting__skill="my-meeting",
         meeting__model="sonnet",
         meeting__effort="xhigh",
-        lecture__effort="low",
         auto_stop_minutes="2,5",
         terms_dictionary=str(new_terms),
     )
@@ -117,8 +113,6 @@ def test_saving_writes_settings_file_and_keeps_keys_that_are_not_on_screen(spook
     assert "Настройки сохранены" in response.text
     saved = tomllib.loads(spook.settings_path.read_text(encoding="utf-8"))
     assert saved["meeting"] == {"folder": str(new_meetings), "skill": "my-meeting", "model": "sonnet", "effort": "xhigh"}
-    assert saved["lecture"]["effort"] == "low"
-    assert saved["lecture"]["folder"] == str(spook.lectures_dir)
     assert saved["auto_stop_minutes"] == 2.5
     assert saved["terms_dictionary"] == str(new_terms)
     assert saved["port"] == spook.settings.port
@@ -153,14 +147,14 @@ def test_device_list_comes_from_audio_input_and_default_removes_pinning(spook):
         "mic": "alsa_input.usb",
     }
     assert settings_form(spook).values["sources.system"] == "alsa_output.hdmi"
-    spook.start_lecture()
+    spook.start_meeting()
     assert 'title="alsa_output.hdmi"' in spook.page().text
     spook.stop()
 
     save(spook, sources__system="")
 
     assert tomllib.loads(spook.settings_path.read_text(encoding="utf-8"))["sources"]["system"] == ""
-    spook.start_lecture()
+    spook.start_meeting()
     assert 'title="образцы"' in spook.page().text
 
 
@@ -179,7 +173,7 @@ def meeting_until_auto_stop(spook, minutes: float) -> None:
     spook.recognizer.say("Реплика.")
     with spook.events() as events:
         assert spook.start_meeting().status_code == 200
-        spook.audio.feed(speech(20))
+        spook.feed_system(speech(20))
         events.wait_for("paragraph", containing="Реплика.")
         spook.clock.advance(minutes * 60 - 1)
         assert "идёт" in spook.page().text
@@ -217,7 +211,7 @@ def test_saving_during_session_acts_from_next_session_and_agent_works_in_folder_
         response = save(spook, meeting__folder=str(new_folder), meeting__model="haiku", auto_stop_minutes="10")
 
         assert response.status_code == 200
-        spook.audio.feed(speech(20))
+        spook.feed_system(speech(20))
         events.wait_for("paragraph", containing="Реплика.")
         spook.clock.advance(5 * 60)
         events.wait_for("state", containing="нет Сессии")
@@ -240,25 +234,25 @@ def test_agent_names_topic_of_note_left_in_folder_changed_during_session(spook, 
     spook.agent.play("topic")
     spook.recognizer.say("Реплика.")
     with spook.events() as events:
-        spook.start_lecture()
-        save(spook, lecture__folder=str(tmp_path / "Новые лекции"))
-        spook.audio.feed(speech(20))
+        spook.start_meeting()
+        save(spook, meeting__folder=str(tmp_path / "Новые Встречи"))
+        spook.feed_system(speech(20))
         events.wait_for("paragraph", containing="Реплика.")
         spook.stop()
         events.wait_for("agent", containing="готово")
 
-    assert sorted(path.name for path in spook.lectures_dir.iterdir()) == ["2026-11-06 14-02 Репликация в Raft.md"]
+    assert sorted(path.name for path in spook.meetings_dir.iterdir()) == ["2026-11-06 14-02 Репликация в Raft.md"]
 
 
 @pytest.mark.parametrize(
     ("field", "value", "reason"),
     [
         ("meeting.folder", "", "Укажите папку Заметок вида «Встреча»"),
-        ("lecture.folder", "lectures", "Нужен полный путь (от «/» или «~»), а не «lectures»"),
+        ("meeting.folder", "meetings", "Нужен полный путь (от «/» или «~»), а не «meetings»"),
         ("auto_stop_minutes", "пять", "Время автостопа — число минут больше нуля, а не «пять»"),
         ("auto_stop_minutes", "0", "Время автостопа — число минут больше нуля, а не «0»"),
         ("auto_stop_minutes", "-1", "Время автостопа — число минут больше нуля, а не «-1»"),
-        ("lecture.effort", "turbo", "Неизвестный effort «turbo»: допустимы low, medium, high, xhigh, max"),
+        ("meeting.effort", "turbo", "Неизвестный effort «turbo»: допустимы low, medium, high, xhigh, max"),
         ("meeting.model", "", "Укажите модель"),
         ("terms_dictionary", "", "Укажите путь к Словарю терминов"),
     ],

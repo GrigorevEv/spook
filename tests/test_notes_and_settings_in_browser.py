@@ -12,12 +12,12 @@ expect.set_options(timeout=10_000)
 NOTE_NAME = "2026-11-06 14-02 Репликация в Raft"
 
 
-def lecture_with_summary(spook) -> None:
+def meeting_with_summary(spook) -> None:
     spook.agent.play("summary")
     spook.recognizer.say("Лидер принимает записи.")
     with spook.events() as events:
-        assert spook.start_lecture(topic="Репликация в Raft").status_code == 200
-        spook.audio.feed(speech(20))
+        assert spook.start_meeting(topic="Репликация в Raft").status_code == 200
+        spook.feed_system(speech(20))
         events.wait_for("paragraph", containing="Лидер принимает записи.")
         assert spook.stop().status_code == 200
         events.wait_for("agent", containing="готово")
@@ -28,13 +28,13 @@ def row_of(page: Page, topic: str):
 
 
 def test_notes_screen_shows_summary_state_opens_agent_log_and_restarts_agent_only_after_confirmation(spook, page, screenshot):
-    lecture_with_summary(spook)
+    meeting_with_summary(spook)
     page.goto(spook.base_url)
     page.get_by_role("navigation", name="Экраны").get_by_role("link", name="Заметки").click()
 
     row = row_of(page, "Репликация в Raft")
     expect(row).to_contain_text("2026-11-06 14:02")
-    expect(row).to_contain_text("Лекция")
+    expect(row).to_contain_text("Встреча")
     expect(row).to_contain_text("готово")
     screenshot(page, "заметки")
 
@@ -65,11 +65,11 @@ def test_notes_screen_shows_summary_state_opens_agent_log_and_restarts_agent_onl
     expect(row).to_contain_text("готово")
     expect(row.get_by_text("Перезапустить Агента")).to_be_visible()
     screenshot(page, "заметки-после-перезапуска")
-    note = spook.lectures_dir / f"{NOTE_NAME}.md"
+    note = spook.meetings_dir / f"{NOTE_NAME}.md"
     launches = [call["argv"][:6] for call in spook.agent.calls()]
     assert launches == [
-        ["-p", f"/spook-lecture {note}", "--model", "opus", "--effort", "high"],
-        ["-p", f"/spook-lecture {note}", "--model", "haiku", "--effort", "low"],
+        ["-p", f"/spook-meeting {note}", "--model", "opus", "--effort", "high"],
+        ["-p", f"/spook-meeting {note}", "--model", "haiku", "--effort", "low"],
     ]
 
 
@@ -87,7 +87,7 @@ def test_settings_screen_saves_auto_stop_and_meeting_model_and_rejects_invalid_v
     expect(page.get_by_role("status")).to_contain_text("Настройки сохранены")
     page.reload()
     expect(meeting.get_by_role("combobox", name="Модель Агента")).to_have_value("sonnet")
-    expect(page.get_by_role("region", name="Лекция").get_by_role("combobox", name="Модель Агента")).to_have_value("opus")
+    expect(page.get_by_role("region", name="Лекция")).to_have_count(0)
     expect(auto_stop).to_have_value("2.5")
     saved = spook.settings_path.read_bytes()
 

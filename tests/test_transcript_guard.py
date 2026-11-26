@@ -2,22 +2,22 @@ from __future__ import annotations
 
 from conftest import SseEvent, speech
 
-NOTE_NAME = "2026-11-06 14-02 Лекция"
+NOTE_NAME = "2026-11-06 14-02 Встреча"
 
 NOTE_WITH_SUMMARY = (
     "---\n"
     "date: 2026-11-06\n"
     'start: "14:02"\n'
     'end: "14:02"\n'
-    "tags: [лекция]\n"
+    "tags: [встреча]\n"
     "---\n"
     "\n"
-    "## О чём\n"
+    "## Суть\n"
     "\n"
     "Про тесты.\n"
     "\n"
     "## Транскрипт\n"
-    "\n**0:00:00** Реплика.\n"
+    "\n**14:02 Собеседники:** Реплика.\n"
 )
 
 NOTE_WITHOUT_SUMMARY = (
@@ -25,31 +25,31 @@ NOTE_WITHOUT_SUMMARY = (
     "date: 2026-11-06\n"
     'start: "14:02"\n'
     'end: "14:02"\n'
-    "tags: [лекция]\n"
+    "tags: [встреча]\n"
     "---\n"
     "\n"
     "## Транскрипт\n"
-    "\n**0:00:00** Реплика.\n"
+    "\n**14:02 Собеседники:** Реплика.\n"
 )
 
 
 def run_agent(spook, scenario: str, until: str) -> SseEvent:
     spook.agent.play(scenario)
     spook.recognizer.say("Реплика.")
-    spook.start_lecture()
+    spook.start_meeting()
     with spook.events() as events:
-        spook.audio.feed(speech(20))
+        spook.feed_system(speech(20))
         events.wait_for("paragraph", containing="Реплика.")
         spook.stop()
         return events.wait_for("agent", containing=until)
 
 
 def note_text(spook) -> str:
-    return (spook.lectures_dir / f"{NOTE_NAME}.md").read_text(encoding="utf-8")
+    return (spook.meetings_dir / f"{NOTE_NAME}.md").read_text(encoding="utf-8")
 
 
 def journal(spook) -> str:
-    return (spook.state_dir / "agent" / "lecture" / f"{NOTE_NAME}.log").read_text(encoding="utf-8")
+    return (spook.state_dir / "agent" / "meeting" / f"{NOTE_NAME}.log").read_text(encoding="utf-8")
 
 
 def test_agent_that_left_transcript_alone_causes_no_notice(spook):
