@@ -38,10 +38,14 @@ def test_invalid_result_leaves_existing_note_intact(spook, scenario):
 
 def test_structured_reply_preserves_the_topic_and_the_escaped_html_transcript(spook):
     note = existing_note(spook)
+    contents = note.read_bytes().replace(b"\n", b"\r\n")
+    note.write_bytes(contents)
+    transcript = contents.split('<section class="card" id="транскрипт">'.encode())[1].split(b"</section>")[0]
     before = read_page(note)
 
     run_codex(spook, note, "topic", "готово")
 
+    assert transcript in note.read_bytes()
     page = read_page(note)
     assert page.title == before.title
     assert page.properties == before.properties

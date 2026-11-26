@@ -101,7 +101,7 @@ class Note:
     def read(self) -> str:
         if self.path.is_symlink():
             raise OSError(f"Путь Заметки ведёт на другую страницу: {self.path.name}")
-        return self.path.read_text(encoding="utf-8")
+        return self.path.read_bytes().decode("utf-8")
 
     @property
     def name(self) -> str:
@@ -148,9 +148,7 @@ class Note:
         if not topic:
             raise ValueError("Тема пуста")
         with wisp.write_lock(self.folder):
-            if self.path.is_symlink():
-                raise OSError(f"Путь Заметки ведёт на другую страницу: {self.path.name}")
-            original = self.path.read_bytes().decode("utf-8")
+            original = self.read()
             meta = wisp.page_meta(original)
             properties = meta["spook"]
             properties["topic"] = topic
@@ -161,20 +159,22 @@ class Note:
             page = _with_description(page, topic, wisp.content(page, _SUMMARY))
             page = wisp.with_meta(page, meta)
             wisp.write_page(self.path, page)
-        if self.is_draft:
-            return self.path
+        if not self.is_draft:
+            self._refresh_or_restore(original, page)
+        return self.path
+
+    def _refresh_or_restore(self, original: str, updated: str) -> None:
         try:
             wisp.refresh_index(self.path)
         except OSError:
             with wisp.write_lock(self.folder):
                 try:
-                    unchanged = not self.path.is_symlink() and self.path.read_bytes() == page.encode("utf-8")
-                except OSError:
+                    unchanged = self.read() == updated
+                except (OSError, UnicodeError):
                     unchanged = False
                 if unchanged:
                     wisp.write_page(self.path, original)
             raise
-        return self.path
 
     def append_paragraph(self, paragraph: Paragraph) -> None:
         heading = f"{paragraph.label} {paragraph.speaker}:"
@@ -269,13 +269,7 @@ class Note:
             page = wisp.with_content(original, _SUMMARY, body)
             page = _with_description(page, note_properties(page)["topic"], body)
             wisp.write_page(self.path, page)
-        try:
-            wisp.refresh_index(self.path)
-        except OSError:
-            with wisp.write_lock(self.folder):
-                if self.read() == page:
-                    wisp.write_page(self.path, original)
-            raise
+        self._refresh_or_restore(original, page)
 
 
 class TranscriptGuard:
@@ -304,7 +298,7 @@ class TranscriptGuard:
         if snapshot_path.is_symlink():
             raise OSError("Снимок Транскрипта ведёт по ссылке")
         try:
-            original = snapshot_path.read_text(encoding="utf-8")
+            original = snapshot_path.read_bytes().decode("utf-8")
         except FileNotFoundError:
             return ""
         title = wisp.page_meta(original).get("title")
