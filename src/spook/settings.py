@@ -35,6 +35,11 @@ def codex_model(model: str) -> str:
     return DEFAULT_AGENT_MODEL if old in {"opus", "sonnet", "haiku", "opusplan"} or old.startswith("claude-") else model
 
 
+def codex_model_and_effort(model: str, effort: str) -> tuple[str, str]:
+    selected = codex_model(model)
+    return selected, "high" if selected != model else effort
+
+
 @dataclass(frozen=True)
 class KindSettings:
     folder: Path
@@ -151,7 +156,8 @@ def _path_or(value: Any, default: Path) -> Path:
 
 def _kind(raw: dict[str, Any], defaults: KindSettings) -> KindSettings:
     merged = _merge(defaults, raw)
-    return replace(merged, folder=_path_or(raw.get("folder"), defaults.folder), model=codex_model(merged.model))
+    model, effort = codex_model_and_effort(merged.model, merged.effort)
+    return replace(merged, folder=_path_or(raw.get("folder"), defaults.folder), model=model, effort=effort)
 
 
 def _agent(raw: dict[str, Any], defaults: AgentSettings) -> AgentSettings:

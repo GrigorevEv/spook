@@ -19,7 +19,7 @@ from spook import codex
 from spook.meeting_context import meeting_input
 from spook.note import Note, TranscriptGuard
 from spook.notify import send_notification
-from spook.settings import KindSettings, SessionKind, Settings, codex_model
+from spook.settings import KindSettings, SessionKind, Settings, codex_model_and_effort
 
 log = logging.getLogger(__name__)
 
@@ -115,12 +115,13 @@ class _Record:
 
     @classmethod
     def from_json(cls, data: dict) -> _Record:
+        model, effort = codex_model_and_effort(data["model"], data["effort"])
         job = AgentJob(
             note_path=Path(data["note"]),
             kind=SessionKind(data["kind"]),
             skill=data["skill"],
-            model=codex_model(data["model"]),
-            effort=data["effort"],
+            model=model,
+            effort=effort,
         )
         return cls(job, SummaryState(data["state"]), snapshot=data.get("snapshot"))
 
