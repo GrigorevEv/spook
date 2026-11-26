@@ -68,7 +68,7 @@ def test_start_without_speech_detector_model_is_rejected_with_its_folder_and_lea
     page = spook.page().text
     assert "нет Сессии" in page and ">Старт</button>" in page
     assert spook.audio.active_sources == set()
-    assert not spook.meetings_dir.exists()
+    assert not spook.pages() and not list(spook.drafts_dir.glob("*.html"))
     assert not (spook.state_dir / "session.json").exists()
 
 

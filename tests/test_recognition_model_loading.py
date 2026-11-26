@@ -27,11 +27,10 @@ def test_model_is_loaded_only_after_first_start_and_meeting_gets_recognized_text
     assert spook.start_meeting().status_code == 200
     spook.feed_system(samples)
     assert spook.stop().status_code == 200
-    note = spook.meetings_dir / "2026-11-06 14-02 Встреча.md"
-    spook.wait_until(lambda: "XIX" in note.read_text(encoding="utf-8"), timeout=60)
+    spook.wait_until(lambda: "XIX" in spook.note_page().transcript, timeout=60)
 
     assert spook.recognizer.loaded
-    transcript = note.read_text(encoding="utf-8").split("## Транскрипт", 1)[1]
-    paragraph_without_time = transcript.strip().split(":** ", 1)[1]
+    transcript = spook.note_page().transcript
+    paragraph_without_time = transcript.split("Собеседники: ", 1)[1]
     assert similarity(RECOGNIZED_IN_BENCHMARK[SAMPLE], paragraph_without_time) >= 0.9, transcript
     assert "Модель распознавания загружается" in caplog.text

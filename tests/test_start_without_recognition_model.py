@@ -26,7 +26,7 @@ def test_start_without_recognition_model_is_rejected_with_reason_and_leaves_no_s
     assert meeting.status_code == 409, meeting.text
     assert reason in meeting.text
     assert "нет Сессии" in spook.page().text
-    assert not spook.meetings_dir.exists()
+    assert not spook.pages() and not list(spook.drafts_dir.glob("*.html"))
     assert spook.audio.active_sources == set()
 
 

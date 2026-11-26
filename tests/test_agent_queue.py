@@ -6,8 +6,9 @@ import re
 import shlex
 
 from conftest import NO_SPEECH, agent_model_and_effort, speech
-from test_legacy_lectures import queued_job
+from test_agent_launch import NOTE_FILE
 from test_notes_screen import write_note
+from wisp_page import read_page
 
 NOTE_NAME = "2026-11-06 14-02 Встреча"
 
@@ -29,12 +30,12 @@ def test_after_stop_agent_runs_once_with_skill_note_model_and_effort_for_meeting
         spook.stop()
         events.wait_for("agent", containing="готово")
 
-    note_path = spook.meetings_dir / f"{NOTE_NAME}.md"
+    note_path = spook.meetings_dir / NOTE_FILE
     [call] = spook.agent.calls()
     assert agent_model_and_effort(call) == ("gpt-6.2-sol", "medium")
     assert call["input"]["skill"] == (spook.skills_dir / "spook-meeting/SKILL.md").read_text(encoding="utf-8")
     assert call["input"]["transcript"].strip() == "**14:02 Собеседники:** Реплика."
-    assert "## Суть" in note_path.read_text(encoding="utf-8")
+    assert "Про тесты." in read_page(note_path).summary
 
 
 def test_note_with_topic_goes_to_agent_under_its_final_name(spook):
@@ -46,11 +47,11 @@ def test_note_with_topic_goes_to_agent_under_its_final_name(spook):
         spook.stop()
         agent = events.wait_for("agent", containing="готово")
 
-    renamed = spook.meetings_dir / "2026-11-06 14-02 Репликация в Raft.md"
+    renamed = spook.meetings_dir / "2026-11-06-14-02-replikatsiya-v-raft.html"
     assert [call["input"]["topic"] for call in spook.agent.calls()] == ["Репликация в Raft"]
     assert "2026-11-06 14-02 Репликация в Raft" in agent.data
-    assert "## Суть" in renamed.read_text(encoding="utf-8")
-    assert (spook.state_dir / "agent" / "meeting" / "2026-11-06 14-02 Репликация в Raft.log").exists()
+    assert "Про тесты." in read_page(renamed).summary
+    assert (spook.state_dir / "agent" / "meeting" / f"{renamed.stem}.log").exists()
 
 
 def test_agent_that_wrote_summary_above_transcript_gives_done(spook):
@@ -62,21 +63,11 @@ def test_agent_that_wrote_summary_above_transcript_gives_done(spook):
         agent = events.wait_for("agent", containing="готово")
 
     assert NOTE_NAME in agent.data
-    assert (spook.meetings_dir / f"{NOTE_NAME}.md").read_text(encoding="utf-8") == (
-        "---\n"
-        "date: 2026-11-06\n"
-        'start: "14:02"\n'
-        'end: "14:02"\n'
-        "tags: [встреча]\n"
-        "---\n"
-        "\n"
-        "## Суть\n"
-        "\n"
-        "Про тесты.\n"
-        "\n"
-        "## Транскрипт\n"
-        "\n**14:02 Собеседники:** Реплика.\n"
-    )
+    note = read_page(spook.meetings_dir / NOTE_FILE)
+    assert note.properties["date"] == "2026-11-06"
+    assert note.properties["start"] == note.properties["end"] == "14:02"
+    assert "Про тесты." in note.summary
+    assert note.transcript == "14:02 Собеседники: Реплика."
     page = spook.page().text
     assert "готово" in page and "ошибка" not in page
 
@@ -89,8 +80,8 @@ def test_agent_that_failed_gives_error_with_its_message(spook):
         spook.stop()
         agent = events.wait_for("agent", containing="ошибка")
 
-    assert "Сценарий: Агент упал." in agent.data
-    assert "Сценарий: Агент упал." in spook.page().text
+    assert "Codex завершился с кодом 1" in agent.data
+    assert "Codex завершился с кодом 1" in spook.page().text
 
 
 def test_agent_that_finished_without_summary_gives_error(spook):
@@ -124,8 +115,8 @@ def test_second_session_waits_in_queue_while_agent_works_on_first_and_start_is_a
 
         saved = json.loads((spook.state_dir / "agent/queue.json").read_text(encoding="utf-8"))
         assert [(job["state"], job["note"]) for job in saved] == [
-            ("running", str(spook.meetings_dir / f"{NOTE_NAME}.md")),
-            ("queued", str(spook.meetings_dir / "2026-11-06 15-02 Встреча.md")),
+            ("running", str(spook.meetings_dir / NOTE_FILE)),
+            ("queued", str(spook.meetings_dir / "2026-11-06-15-02-vstrecha.html")),
         ]
 
         spook.agent.release()
@@ -150,15 +141,16 @@ def test_agent_log_is_kept_in_state_dir_outside_vault_and_opens_from_page(spook)
         spook.stop()
         events.wait_for("agent", containing="ошибка")
 
-    log_path = spook.state_dir / "agent" / "meeting" / f"{NOTE_NAME}.log"
+    [note] = spook.pages()
+    log_path = spook.state_dir / "agent" / "meeting" / f"{note.stem}.log"
     command, output = log_path.read_text(encoding="utf-8").split("\n", 1)
     [call] = spook.agent.calls()
     assert command == "$ " + shlex.join([str(spook.agent.path), *call["argv"]])
     assert output.startswith(f"(рабочий каталог: {call['cwd']})\n")
-    assert '"thread.started"' in output
-    assert "--- stderr ---\nСценарий: Агент упал." in output
-    assert output.endswith("Код возврата: 1. Выжимка: ошибка — Сценарий: Агент упал.\n")
-    assert sorted(path.name for path in spook.meetings_dir.iterdir()) == [f"{NOTE_NAME}.md"]
+    assert "thread.started\nturn.started" in output
+    assert "Сценарий: Агент упал." not in output
+    assert output.endswith("Код возврата: 1. Выжимка: ошибка — Codex завершился с кодом 1\n")
+    assert {path.name for path in spook.meetings_dir.iterdir()} == {"index.html", NOTE_FILE}
 
     page = spook.page().text
     link = re.search(r'href="(/agent/log\?note=[^"]+)"', page)
@@ -187,7 +179,7 @@ def test_notification_reports_agent_error_with_message(spook):
     spook.wait_until(lambda: spook.notify.calls())
 
     assert [call["argv"] for call in spook.notify.calls()] == [
-        ["Ошибка Агента", f"{NOTE_NAME}: Сценарий: Агент упал."]
+        ["Ошибка Агента", f"{NOTE_NAME}: Codex завершился с кодом 1"]
     ]
 
 
@@ -199,12 +191,12 @@ def test_service_journal_records_agent_start_and_outcome(spook, caplog):
 
     spook.stop()
     spook.wait_until(lambda: spook.notify.calls())
-    spook.wait_until(lambda: "Сценарий: Агент упал." in caplog.text)
+    spook.wait_until(lambda: "Codex завершился с кодом 1" in caplog.text)
 
     journal = [record.getMessage() for record in caplog.records if NOTE_NAME in record.getMessage()]
     assert journal == [
         f"Агент запущен: {NOTE_NAME} — spook-meeting, gpt-6.2-sol, medium",
-        f"Агент закончил: {NOTE_NAME} — ошибка: Сценарий: Агент упал.",
+        f"Агент закончил: {NOTE_NAME} — ошибка: Codex завершился с кодом 1",
     ]
 
 
@@ -225,14 +217,14 @@ def test_unsent_notification_is_recorded_in_service_journal(spook, caplog):
 def test_session_without_utterances_does_not_run_agent_and_leaves_no_empty_note(spook):
     spook.recognizer.say(NO_SPEECH)
     spook.start_meeting()
-    assert (spook.meetings_dir / f"{NOTE_NAME}.md").exists()
+    assert spook.current_note().parent == spook.drafts_dir
 
     with spook.events() as events:
         spook.feed_system(speech(20))
         spook.stop()
         events.wait_for("state", containing="нет Сессии")
 
-    assert list(spook.meetings_dir.iterdir()) == []
+    assert spook.pages() == [] and not list(spook.drafts_dir.glob("*.html"))
     page = spook.page().text
     assert "Выжимка" not in page and "Заметка:" not in page
     assert spook.agent.calls() == [] and spook.notify.calls() == []
@@ -240,14 +232,22 @@ def test_session_without_utterances_does_not_run_agent_and_leaves_no_empty_note(
 
 def test_agent_queue_survives_service_restart_interrupted_run_is_error_and_waiting_note_runs(spook):
     first = write_note(
-        spook.meetings_dir, NOTE_NAME, "2026-11-06", "14:02", "14:35", "встреча", "## Суть\n\nПрежняя Выжимка."
+        spook.meetings_dir, "2026-11-06", "14:02", "14:35", summary="<h2>Суть</h2>\n<p>Прежняя Выжимка.</p>"
     )
-    second = write_note(spook.meetings_dir, "2026-11-06 15-02 Планёрка", "2026-11-06", "15:02", "15:35", "встреча")
-    snapshot = first.read_text(encoding="utf-8")
-    first.write_text(snapshot.replace("Реплика.", "Изменённый текст."), encoding="utf-8")
+    second = write_note(spook.meetings_dir, "2026-11-06", "15:02", "15:35", "Планёрка")
+    snapshot = first.read_bytes()
+    first.write_bytes(snapshot.replace("Реплика.".encode(), "Изменённый текст.".encode()))
+    snapshot_id = "3" * 32
+    spook.drafts_dir.mkdir(exist_ok=True)
+    saved = spook.drafts_dir / f"agent-{snapshot_id}.guard"
+    saved.write_bytes(snapshot)
     queue = spook.state_dir / "agent" / "queue.json"
     queue.parent.mkdir(parents=True, exist_ok=True)
-    jobs = [queued_job(first, "meeting", "running", snapshot), queued_job(second, "meeting", "queued")]
+    settings = {"kind": "meeting", "skill": "spook-meeting", "model": "gpt-6.2-astra", "effort": "high"}
+    jobs = [
+        {**settings, "note": str(first), "state": "running", "snapshot_id": snapshot_id},
+        {**settings, "note": str(second), "state": "queued"},
+    ]
     queue.write_text(json.dumps(jobs), encoding="utf-8")
     spook.agent.play("summary")
 
@@ -256,16 +256,17 @@ def test_agent_queue_survives_service_restart_interrupted_run_is_error_and_waiti
     spook.wait_until(lambda: len(spook.notify.calls()) == 2)
     assert [call["argv"] for call in spook.notify.calls()] == [
         ["Ошибка Агента", f"{NOTE_NAME}: Агент прерван перезапуском службы"],
-        ["Выжимка готова", second.stem],
+        ["Выжимка готова", read_page(second).title],
     ]
     [call] = spook.agent.calls()
     assert call["input"]["topic"] == "Планёрка"
-    assert first.read_text(encoding="utf-8") == snapshot
+    assert first.read_bytes() == snapshot
+    assert not saved.exists()
     assert "Про тесты." in second.read_text(encoding="utf-8")
     page = spook.page().text
     assert "Агент прерван перезапуском службы" in page
     assert "Агент изменил Транскрипт — возвращён исходный." in page
-    journal = spook.http.get(f"{spook.base_url}/agent/log", params={"note": NOTE_NAME}).text
+    journal = spook.http.get(f"{spook.base_url}/agent/log", params={"note": first.stem}).text
     assert journal.endswith(
         "\nОхрана Транскрипта: Агент изменил Транскрипт — возвращён исходный.\n"
         "\nВыжимка: ошибка — Агент прерван перезапуском службы\n"

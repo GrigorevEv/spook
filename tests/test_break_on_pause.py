@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from conftest import note_text, speech
+from conftest import speech
 
 NOTE_NAME = "2026-11-06 14-02 Встреча"
 
@@ -25,19 +25,11 @@ def test_long_break_while_paused_finishes_session_at_last_activity_without_pause
     ]
     page = spook.page().text
     assert "нет Сессии" in page and ">Старт</button>" in page
-    assert note_text(spook) == (
-        "---\n"
-        "date: 2026-11-06\n"
-        'start: "14:02"\n'
-        'end: "14:04"\n'
-        "tags: [встреча]\n"
-        "---\n"
-        "\n"
-        "## Суть\n"
-        "\n"
-        "Про тесты.\n"
-        "\n"
-        "## Транскрипт\n"
-        "\n**14:02 Собеседники:** До Паузы.\n"
-    )
+    page = spook.note_page()
+    assert page.properties["date"] == "2026-11-06"
+    assert page.properties["start"] == "14:02"
+    assert page.properties["end"] == "14:04"
+    assert page.meta["tags"] == ["встреча"]
+    assert page.transcript == "14:02 Собеседники: До Паузы."
+    assert "Про тесты." in page.summary
     assert not (spook.state_dir / "session.json").exists()

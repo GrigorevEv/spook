@@ -11,7 +11,7 @@ def test_settings_without_file_have_defaults_from_spec(tmp_path: Path):
     settings = load_settings(tmp_path / "нет такого файла.toml")
 
     assert settings.port == 8765
-    assert settings.meeting.folder == Path.home() / "Documents/notes/работа"
+    assert settings.wisp == Path.home() / "code/personal/wisp"
     assert settings.meeting.skill == "spook-meeting"
     assert (settings.meeting.model, settings.meeting.effort) == ("gpt-6.2-astra", "high")
     assert settings.auto_stop_minutes == 5
@@ -23,7 +23,6 @@ def test_settings_without_file_have_defaults_from_spec(tmp_path: Path):
     assert settings.recognition.speech_pad_ms == 100
     assert settings.recognition.forced_cut_min_pause_ms == 100
     assert (settings.sources.system, settings.sources.mic) == ("", "")
-    assert settings.wiki == Path.home() / "learn/wiki"
     assert settings.programs.codex == str(Path.home() / ".local/bin/codex")
     assert settings.agent.timeout_minutes == 15
     assert settings.agent.wrapper == ""
@@ -33,6 +32,7 @@ def test_settings_without_file_have_defaults_from_spec(tmp_path: Path):
 def test_partial_settings_file_overrides_only_given_keys(tmp_path: Path):
     path = tmp_path / "settings.toml"
     path.write_text(
+        'wisp = "~/новый Wisp"\n'
         "port = 9000\n"
         "auto_stop_minutes = 7\n"
         "\n"
@@ -49,16 +49,17 @@ def test_partial_settings_file_overrides_only_given_keys(tmp_path: Path):
 
     assert settings.port == 9000
     assert settings.auto_stop_minutes == 7
-    assert settings.meeting.folder == Path.home() / "meetings"
+    assert settings.wisp == Path.home() / "новый Wisp"
+    assert settings.kind_folders()[0][1] == settings.wisp / "html"
     assert (settings.meeting.skill, settings.meeting.model, settings.meeting.effort) == ("spook-meeting", "gpt-6.2-astra", "medium")
     assert settings.programs.codex == "/opt/codex/bin/codex"
     assert settings.programs.notify == "notify-send"
 
 
-def test_agent_section_sets_timeout_and_wrapper_and_wiki_root_expands_home(tmp_path: Path):
+def test_agent_section_sets_timeout_and_wrapper_and_wisp_root_expands_home(tmp_path: Path):
     path = tmp_path / "settings.toml"
     path.write_text(
-        'wiki = "~/vault/wiki"\n'
+        'wisp = "~/vault/wisp"\n'
         "\n"
         "[agent]\n"
         "timeout_minutes = 20\n"
@@ -71,7 +72,7 @@ def test_agent_section_sets_timeout_and_wrapper_and_wiki_root_expands_home(tmp_p
 
     settings = load_settings(path)
 
-    assert settings.wiki == Path.home() / "vault/wiki"
+    assert settings.wisp == Path.home() / "vault/wisp"
     assert settings.agent.timeout_minutes == 20
     assert settings.agent.wrapper == "systemd-run --user --wait --pipe --collect --quiet --same-dir"
     assert settings.programs.codex == str(Path.home() / "bin/codex")

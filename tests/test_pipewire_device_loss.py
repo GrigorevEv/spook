@@ -79,8 +79,8 @@ def test_lost_pinned_virtual_device_leaves_mark_and_warning_and_capture_moves_to
     expected = f"Системный звук: устройство «{OUTPUT_DESCRIPTION}» пропало, захват продолжается с «{virtual_default_output}»"
     assert f"<em>14:02 {expected}</em>" in mark.data
     assert f'<p class="warning" role="alert">{expected}</p>' in spook.page().text
-    note = next(spook.meetings_dir.iterdir()).read_text(encoding="utf-8")
-    assert f"\n*14:02 {expected}*\n" in note
+    note = spook.current_note().read_text(encoding="utf-8")
+    assert f"<em>14:02 {expected}</em>" in note
 
     assert spook.stop().status_code == 200
     with spook.events() as events:

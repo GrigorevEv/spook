@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from spook.audio import Source
 
-from conftest import NOTE_AFTER_START, note_text, speech
+from conftest import speech
 
 NOTE_NAME = "2026-11-06 14-02 Встреча"
 
@@ -29,7 +29,8 @@ def test_session_record_on_disk_has_no_sound_and_no_utterance_text(spook):
     assert "Секретная" not in raw
     assert [path.name for path in spook.state_dir.iterdir() if path.is_file()] == ["session.json"]
     record = json.loads(raw)
-    assert record["note"] == str(spook.meetings_dir / "2026-11-06 14-02 Тесты.md")
+    assert record["note"] == str(spook.current_note())
+    assert spook.current_note().parent == spook.drafts_dir
     assert record["kind"] == "meeting"
     assert record["topic"] == "Тесты и швы"
     assert record["state"] == "running"
@@ -74,10 +75,10 @@ def test_short_downtime_continues_meeting_in_same_note_with_gap_mark_and_notific
         spook.feed_system(speech(20))
         after = events.wait_for("paragraph", containing="После перерыва.")
     assert "<time>14:05</time>" in after.data
-    assert note_text(spook) == NOTE_AFTER_START + (
-        "\n**14:02 Собеседники:** До перерыва.\n"
-        "\n*Пропуск 14:03–14:05*\n"
-        "\n**14:05 Собеседники:** После перерыва.\n"
+    assert spook.note_page().transcript == (
+        "14:02 Собеседники: До перерыва.\n\n"
+        "Пропуск 14:03–14:05\n\n"
+        "14:05 Собеседники: После перерыва."
     )
     spook.wait_until(lambda: spook.notify.calls())
     assert [call["argv"] for call in spook.notify.calls()] == [
@@ -99,30 +100,21 @@ def test_long_downtime_finishes_meeting_at_last_activity_renames_and_queues_agen
 
     spook.restart_service(60 * 60)
 
-    note = spook.meetings_dir / "2026-11-06 14-02 Планёрка.md"
     spook.wait_until(lambda: len(spook.notify.calls()) == 2)
     assert [call["argv"] for call in spook.notify.calls()] == [
         ["Сессия завершена", "Перерыв в работе Spook 14:05–15:05 — без речи дольше 5 минут"],
         ["Выжимка готова", "2026-11-06 14-02 Планёрка"],
     ]
     [call] = spook.agent.calls()
-    assert call["input"]["topic"] == "Планёрка"
-    assert call["input"]["transcript"].strip() == "**14:02 Собеседники:** Обсудили план."
-    assert note.read_text(encoding="utf-8") == (
-        "---\n"
-        "date: 2026-11-06\n"
-        'start: "14:02"\n'
-        'end: "14:05"\n'
-        "tags: [встреча]\n"
-        "---\n"
-        "\n"
-        "## Суть\n"
-        "\n"
-        "Про тесты.\n"
-        "\n"
-        "## Транскрипт\n"
-        "\n**14:02 Собеседники:** Обсудили план.\n"
-    )
+    assert call["input"]["topic"] == "Планёрка" and "Обсудили план." in call["input"]["transcript"]
+    assert spook.current_note().parent == spook.meetings_dir
+    page = spook.note_page()
+    assert page.properties["date"] == "2026-11-06"
+    assert page.properties["start"] == "14:02"
+    assert page.properties["end"] == "14:05"
+    assert page.meta["tags"] == ["встреча"]
+    assert page.transcript == "14:02 Собеседники: Обсудили план."
+    assert "Про тесты." in page.summary
     assert not (spook.state_dir / "session.json").exists()
     page = spook.page().text
     assert "нет Сессии" in page and ">Старт</button>" in page
@@ -153,10 +145,10 @@ def test_short_downtime_on_pause_stays_paused_without_gap_mark(spook):
         events.wait_for("mark", containing="Пауза")
         spook.feed_system(speech(20))
         events.wait_for("paragraph", containing="После Паузы.")
-    assert note_text(spook) == NOTE_AFTER_START + (
-        "\n**14:02 Собеседники:** До Паузы.\n"
-        "\n*Пауза 14:02–14:07*\n"
-        "\n**14:07 Собеседники:** После Паузы.\n"
+    assert spook.note_page().transcript == (
+        "14:02 Собеседники: До Паузы.\n\n"
+        "Пауза 14:02–14:07\n\n"
+        "14:07 Собеседники: После Паузы."
     )
 
 
@@ -177,17 +169,17 @@ def test_short_downtime_in_meeting_marks_gap_by_clock_and_restarts_both_sources(
         spook.audio.feed(speech(20), Source.MIC)
         spook.audio.feed(speech(20), Source.SYSTEM)
         events.wait_for("paragraph", containing="Я снова здесь.")
-    assert note_text(spook) == NOTE_AFTER_START + (
-        "\n**14:02 Собеседники:** Начали.\n"
-        "\n*Пропуск 14:03–14:05*\n"
-        "\n**14:05 Я:** Я снова здесь.\n"
+    assert spook.note_page().transcript == (
+        "14:02 Собеседники: Начали.\n\n"
+        "Пропуск 14:03–14:05\n\n"
+        "14:05 Я: Я снова здесь."
     )
 
 
 def test_record_of_session_whose_note_is_gone_is_removed_silently(spook, caplog):
     spook.start_meeting()
     spook.clock.advance(60)
-    (spook.meetings_dir / f"{NOTE_NAME}.md").unlink()
+    spook.current_note().unlink()
 
     spook.restart_service(60)
 
@@ -208,7 +200,7 @@ def test_long_downtime_of_session_without_utterances_removes_empty_note_without_
         ["Сессия завершена", "Перерыв в работе Spook 14:03–14:13 — без речи дольше 5 минут"]
     ]
     spook.wait_until(lambda: not (spook.state_dir / "session.json").exists())
-    assert list(spook.meetings_dir.iterdir()) == [] and spook.agent.calls() == []
+    assert spook.pages() == [] and spook.agent.calls() == []
 
 
 def test_short_sleep_without_restart_leaves_gap_mark_before_speech_after_waking(spook):
@@ -226,10 +218,10 @@ def test_short_sleep_without_restart_leaves_gap_mark_before_speech_after_waking(
         events.wait_for("paragraph", containing="После сна.")
 
     assert "<em>Пропуск 14:02–14:05</em>" in mark.data
-    assert note_text(spook) == NOTE_AFTER_START + (
-        "\n**14:02 Собеседники:** До сна. Хвост.\n"
-        "\n*Пропуск 14:02–14:05*\n"
-        "\n**14:05 Собеседники:** После сна.\n"
+    assert spook.note_page().transcript == (
+        "14:02 Собеседники: До сна. Хвост.\n\n"
+        "Пропуск 14:02–14:05\n\n"
+        "14:05 Собеседники: После сна."
     )
     assert "идёт" in spook.page().text
     spook.wait_until(lambda: spook.notify.calls())
@@ -253,7 +245,7 @@ def test_long_sleep_without_restart_finishes_session_at_last_activity_not_at_wak
         events.wait_for("state", containing="нет Сессии")
         events.wait_for("agent", containing="готово")
 
-    assert 'end: "14:05"' in note_text(spook)
+    assert spook.note_page().properties["end"] == "14:05"
     spook.wait_until(lambda: len(spook.notify.calls()) == 2)
     assert [call["argv"] for call in spook.notify.calls()][0] == [
         "Сессия завершена", "Перерыв в работе Spook 14:05–15:05 — без речи дольше 5 минут"
@@ -274,7 +266,7 @@ def test_clock_jump_caught_by_auto_stop_check_still_ends_session_at_last_activit
 
         events.wait_for("state", containing="нет Сессии")
 
-    assert 'end: "14:03"' in note_text(spook)
+    assert spook.note_page().properties["end"] == "14:03"
 
 
 def test_downtime_while_finishing_completes_note_at_stop_time_and_queues_agent(spook):
@@ -293,7 +285,7 @@ def test_downtime_while_finishing_completes_note_at_stop_time_and_queues_agent(s
 
     spook.wait_until(lambda: spook.notify.calls())
     assert [call["argv"] for call in spook.notify.calls()] == [["Выжимка готова", NOTE_NAME]]
-    assert 'end: "14:03"' in note_text(spook)
+    assert spook.note_page().properties["end"] == "14:03"
     assert not (spook.state_dir / "session.json").exists()
 
 
@@ -311,7 +303,7 @@ def test_silence_before_sleep_counts_together_with_sleep_and_finishes_session_at
 
         events.wait_for("state", containing="нет Сессии")
 
-    assert 'end: "14:06"' in note_text(spook)
+    assert spook.note_page().properties["end"] == "14:06"
     spook.wait_until(lambda: spook.notify.calls())
     assert [call["argv"] for call in spook.notify.calls()][0] == [
         "Сессия завершена", "Перерыв в работе Spook 14:06–14:11 — без речи дольше 5 минут"
@@ -334,7 +326,7 @@ def test_silence_before_restart_counts_together_with_downtime_and_finishes_sessi
         ["Сессия завершена", "Перерыв в работе Spook 14:06–14:11 — без речи дольше 5 минут"],
         ["Выжимка готова", NOTE_NAME],
     ]
-    assert 'end: "14:06"' in note_text(spook)
+    assert spook.note_page().properties["end"] == "14:06"
 
 
 def test_after_short_downtime_silence_is_counted_from_last_utterance_not_from_return(spook):
@@ -353,5 +345,5 @@ def test_after_short_downtime_silence_is_counted_from_last_utterance_not_from_re
     spook.clock.advance(1)
 
     spook.wait_until(lambda: "нет Сессии" in spook.page().text)
-    assert 'end: "14:07"' in note_text(spook)
+    assert spook.note_page().properties["end"] == "14:07"
     assert ["Сессия завершена", "5 минут без речи"] in [call["argv"] for call in spook.notify.calls()]

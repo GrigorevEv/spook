@@ -12,7 +12,7 @@ def test_start_of_unknown_kind_is_rejected_and_session_does_not_start(spook, kin
     page = spook.page().text
     assert "нет Сессии" in page and ">Старт</button>" in page
     assert spook.audio.active_sources == set()
-    assert not spook.meetings_dir.exists()
+    assert not spook.pages() and not list(spook.drafts_dir.glob("*.html"))
     assert not (spook.state_dir / "session.json").exists()
 
 

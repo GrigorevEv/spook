@@ -6,12 +6,12 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
-from urllib.parse import quote
 
 import httpx
 import pytest
 
 from spook.clock import ManualClock
+from spook.demo_wisp import demo_wisp
 from spook.fakes import FakeAudioInput, LoudnessSpeechDetector, ScriptedRecognizer
 from spook.serve import make_server
 from spook.settings import default_settings_path, load_settings
@@ -49,6 +49,7 @@ class ServiceWithoutSettingsFile:
 def service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[ServiceWithoutSettingsFile]:
     home = tmp_path / "home"
     home.mkdir()
+    demo_wisp(home / "code/personal/wisp")
     programs = tmp_path / "bin"
     programs.mkdir()
     config_home = tmp_path / "config"
@@ -102,8 +103,8 @@ def test_without_settings_file_screen_shows_default_folders_skills_models_effort
 
     assert response.status_code == 200
     values = Form(response.text).values
-    assert {key: values[key] for key in ("meeting.folder", "meeting.skill", "meeting.model", "meeting.effort")} == {
-        "meeting.folder": str(service.home / "Documents/notes/работа"),
+    assert {key: values[key] for key in ("wisp", "meeting.skill", "meeting.model", "meeting.effort")} == {
+        "wisp": str(service.home / "code/personal/wisp"),
         "meeting.skill": "spook-meeting",
         "meeting.model": "gpt-6.2-astra",
         "meeting.effort": "high",
@@ -131,13 +132,13 @@ def test_without_settings_file_auto_stop_comes_after_5_minutes_and_is_notified_t
     assert not service.config_home.exists()
 
 
-def test_without_settings_file_meeting_note_opens_in_obsidian_through_xdg_open(service):
+def test_without_settings_file_meeting_note_opens_in_wisp_through_xdg_open(service):
     note = write_note(
-        service.home / "Documents/notes/работа", "2026-11-05 10-00 Планёрка", "2026-11-05", "10:00", "10:30", "встреча"
+        service.home / "code/personal/wisp/html", "2026-11-05", "10:00", "10:30", "Планёрка"
     )
 
-    response = service.http.post(f"{service.base_url}/notes/obsidian", data={"note": str(note)})
+    response = service.http.post(f"{service.base_url}/notes/wisp", data={"note": str(note)})
 
     assert response.status_code == 200, response.text
-    assert [call["argv"] for call in service.opener.calls()] == [["obsidian://open?path=" + quote(str(note), safe="")]]
+    assert [call["argv"] for call in service.opener.calls()] == [[note.as_uri()]]
     assert not service.config_home.exists()

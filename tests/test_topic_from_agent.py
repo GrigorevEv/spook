@@ -5,36 +5,42 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from conftest import speech
+from test_agent_launch import NOTE_FILE
+from test_wisp_publication import entries
+from wisp_page import read_page
 
-NOTE_WITHOUT_TOPIC = "2026-11-06 14-02 Встреча.md"
+UTTERANCE = "Лидер рассылает записи журнала."
+TOPIC = "Репликация в Raft"
+TITLE = "2026-11-06 14-02 Репликация в Raft"
 
 
-def note_names(spook) -> list[str]:
-    return sorted(path.name for path in spook.meetings_dir.iterdir())
-
-
-def finished_meeting(spook, topic: str = "") -> Path:
-    spook.agent.play("fail")
-    spook.recognizer.say("Лидер рассылает записи журнала.")
+def finished_meeting(spook, topic: str = "", scenario: str = "fail") -> Path:
+    before = set(spook.pages())
+    notifications = len(spook.notify.calls())
+    spook.agent.play(scenario)
+    spook.recognizer.say(UTTERANCE)
     assert spook.start_meeting(topic=topic).status_code == 200
     with spook.events() as events:
         spook.feed_system(speech(20))
-        events.wait_for("paragraph", containing="Лидер рассылает записи журнала.")
+        events.wait_for("paragraph", containing=UTTERANCE)
         spook.stop()
-        events.wait_for("agent", containing="ошибка")
-    return spook.meetings_dir / f"2026-11-06 14-02 {topic or 'Встреча'}.md"
+        events.wait_for("agent", containing="ошибка" if scenario == "fail" else "готово")
+    spook.wait_until(lambda: len(spook.notify.calls()) == notifications + 1)
+    [note] = set(spook.pages()) - before
+    return note
 
 
-def topic_command(spook, note: Path, *topic: str, settings: Path | None = None) -> subprocess.CompletedProcess:
+def topic_command(spook, note: Path, *topic: str) -> subprocess.CompletedProcess:
     environment = {
-        "HOME": os.environ["HOME"],
+        "HOME": str(spook.settings_path.parents[2]),
         "PATH": os.environ.get("PATH", ""),
         "XDG_CONFIG_HOME": str(spook.settings_path.parents[1]),
     }
-    options = [] if settings is None else ["--settings", str(settings)]
     return subprocess.run(
-        [sys.executable, "-m", "spook.cli", "topic", *options, str(note), *topic],
+        [sys.executable, "-m", "spook.cli", "topic", str(note), *topic],
         cwd=note.parent,
         env=environment,
         capture_output=True,
@@ -43,177 +49,164 @@ def topic_command(spook, note: Path, *topic: str, settings: Path | None = None) 
     )
 
 
-def test_topic_command_renames_finished_note_without_topic_prints_new_path_and_page_shows_new_name(spook):
+def test_topic_command_sets_the_title_and_prints_the_existing_published_path(spook):
     note = finished_meeting(spook)
-    renamed = spook.meetings_dir / "2026-11-06 14-02 Репликация в Raft.md"
+    before = read_page(note)
 
-    with spook.events() as events:
-        events.next_event()
-        completed = topic_command(spook, note, "Репликация в Raft")
-        agent = events.wait_for("agent", containing="2026-11-06 14-02 Репликация в Raft")
+    completed = topic_command(spook, note, TOPIC)
 
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout == f"{renamed}\n"
-    assert completed.stderr == ""
-    assert note_names(spook) == ["2026-11-06 14-02 Репликация в Raft.md"]
-    assert "2026-11-06 14-02 Встреча" not in agent.data
-    page = spook.page().text
-    assert str(renamed) in page
-    assert "2026-11-06 14-02 Встреча" not in page
+    assert completed.stdout == f"{note}\n" and completed.stderr == ""
+    assert spook.pages() == [note] and note.name == NOTE_FILE
+    after = read_page(note)
+    assert after.title == TITLE
+    assert after.properties == {**before.properties, "topic": TOPIC}
+    assert after.transcript == before.transcript
+    assert TITLE in spook.page().text
+    [entry] = entries(spook)
+    assert entry["file"] == note.name and TOPIC in entry["summary"]
 
 
-def test_spook_saves_agent_reply_and_reports_done_under_new_topic(spook):
-    spook.agent.play("topic")
-    spook.recognizer.say("Лидер рассылает записи журнала.")
-    spook.start_meeting()
+def test_spook_saves_agent_reply_under_stable_address_and_reports_the_topic(spook):
+    note = finished_meeting(spook, scenario="topic")
 
-    with spook.events() as events:
-        spook.feed_system(speech(20))
-        events.wait_for("paragraph", containing="Лидер рассылает записи журнала.")
-        spook.stop()
-        agent = events.wait_for("agent", containing="готово")
-
-    new_name = "2026-11-06 14-02 Репликация в Raft"
-    assert new_name in agent.data and "ошибка" not in agent.data
-    assert note_names(spook) == [f"{new_name}.md"]
-    assert "## Суть" in (spook.meetings_dir / f"{new_name}.md").read_text(encoding="utf-8")
+    assert note.name == NOTE_FILE and spook.pages() == [note]
+    page = read_page(note)
+    assert page.title == TITLE and page.properties["topic"] == TOPIC
+    assert page.summary == "Суть\n\nПро тесты."
+    assert page.transcript == f"14:02 Собеседники: {UTTERANCE}"
+    assert TITLE in spook.page().text
     [call] = spook.agent.calls()
     assert call["input"]["topic"] == ""
-    assert call["input"]["transcript"].strip() == "**14:02 Собеседники:** Лидер рассылает записи журнала."
-    assert [path.name for path in (spook.state_dir / "agent" / "meeting").iterdir()] == [f"{new_name}.log"]
-    journal = spook.http.get(f"{spook.base_url}/agent/log", params={"note": new_name})
-    assert journal.status_code == 200
-    assert "Выжимка: готово" in journal.text
+    assert call["input"]["transcript"] == f"**14:02 Собеседники:** {UTTERANCE}"
+    [entry] = entries(spook)
+    assert entry["file"] == note.name and TOPIC in entry["summary"]
+    assert [path.name for path in (spook.state_dir / "agent/meeting").iterdir()] == [f"{note.stem}.log"]
+    log = spook.http.get(f"{spook.base_url}/agent/log", params={"note": note.stem})
+    assert log.status_code == 200 and "Выжимка: готово" in log.text and "Охрана Транскрипта" not in log.text
     spook.wait_until(lambda: spook.notify.calls())
-    assert [call["argv"] for call in spook.notify.calls()] == [["Выжимка готова", new_name]]
+    assert [call["argv"] for call in spook.notify.calls()] == [["Выжимка готова", TITLE]]
 
 
-def test_transcript_guard_follows_note_renamed_by_agent_and_does_not_restore_it_under_old_name(spook):
-    spook.agent.play("topic")
-    spook.recognizer.say("Лидер рассылает записи журнала.")
+def test_topic_command_is_rejected_while_session_with_this_draft_is_running(spook):
     spook.start_meeting()
+    note = spook.current_note()
+    before = note.read_bytes()
 
-    with spook.events() as events:
-        spook.feed_system(speech(20))
-        events.wait_for("paragraph", containing="Лидер рассылает записи журнала.")
-        spook.stop()
-        agent = events.wait_for("agent", containing="готово")
+    completed = topic_command(spook, note, TOPIC)
 
-    new_name = "2026-11-06 14-02 Репликация в Raft"
-    assert note_names(spook) == [f"{new_name}.md"]
-    assert (spook.meetings_dir / f"{new_name}.md").read_text(encoding="utf-8") == (
-        "---\n"
-        "date: 2026-11-06\n"
-        'start: "14:02"\n'
-        'end: "14:02"\n'
-        "tags: [встреча]\n"
-        "---\n"
-        "\n"
-        "## Суть\n"
-        "\n"
-        "Про тесты.\n"
-        "\n"
-        "## Транскрипт\n"
-        "\n**14:02 Собеседники:** Лидер рассылает записи журнала.\n"
-    )
-    assert 'class="warning"' not in agent.data
-    journal = spook.http.get(f"{spook.base_url}/agent/log", params={"note": new_name}).text
-    assert "Охрана Транскрипта" not in journal
-
-
-def test_topic_command_is_rejected_while_session_with_this_note_is_running(spook):
-    spook.start_meeting()
-    note = spook.meetings_dir / NOTE_WITHOUT_TOPIC
-
-    completed = topic_command(spook, note, "Репликация в Raft")
-
-    assert completed.returncode == 1
-    assert completed.stdout == ""
+    assert completed.returncode == 1 and not completed.stdout
     assert "Сессия с этой Заметкой ещё идёт" in completed.stderr
-    assert note_names(spook) == [NOTE_WITHOUT_TOPIC]
+    assert note.read_bytes() == before and not spook.pages()
 
 
-def test_topic_command_is_rejected_for_note_that_already_has_topic(spook):
+def test_topic_command_refuses_a_meeting_with_an_existing_topic(spook):
     note = finished_meeting(spook, topic="Raft")
+    before = note.read_bytes()
 
-    completed = topic_command(spook, note, "Репликация в Raft")
+    completed = topic_command(spook, note, TOPIC)
 
-    assert completed.returncode == 1
-    assert "У Заметки уже есть Тема: 2026-11-06 14-02 Raft.md" in completed.stderr
-    assert note_names(spook) == ["2026-11-06 14-02 Raft.md"]
-
-
-def test_topic_command_is_rejected_for_note_outside_meetings_folder(spook, tmp_path: Path):
-    outside = tmp_path / "notes" / NOTE_WITHOUT_TOPIC
-    outside.parent.mkdir()
-    outside.write_text("## Транскрипт\n", encoding="utf-8")
-
-    completed = topic_command(spook, outside, "Репликация в Raft")
-
-    assert completed.returncode == 1
-    assert f"Заметка вне папки Встреч: {outside}" in completed.stderr
-    assert [path.name for path in outside.parent.iterdir()] == [NOTE_WITHOUT_TOPIC]
+    assert completed.returncode == 1 and f"У Заметки уже есть Тема: {note.name}" in completed.stderr
+    assert note.read_bytes() == before and spook.pages() == [note]
 
 
-def test_topic_command_is_rejected_for_missing_note_and_for_empty_topic(spook):
+def test_topic_command_refuses_missing_and_empty_topic(spook):
     note = finished_meeting(spook)
+    before = note.read_bytes()
+    missing_note = spook.meetings_dir / "2026-11-06-15-02-vstrecha.html"
 
-    missing = topic_command(spook, spook.meetings_dir / "2026-11-06 15-02 Встреча.md", "Репликация в Raft")
+    missing = topic_command(spook, missing_note, TOPIC)
     empty = topic_command(spook, note, ' \t ?*"\\ ')
 
-    assert missing.returncode == 1
-    assert "Заметки нет: " in missing.stderr and "2026-11-06 15-02 Встреча.md" in missing.stderr
-    assert empty.returncode == 1
-    assert "Тема пуста" in empty.stderr
-    assert note_names(spook) == [NOTE_WITHOUT_TOPIC]
+    assert missing.returncode == 1 and f"Заметки нет: {missing_note.name}" in missing.stderr
+    assert empty.returncode == 1 and "Тема пуста" in empty.stderr
+    assert note.read_bytes() == before and spook.pages() == [note]
 
 
-def test_topic_from_agent_is_cleaned_of_forbidden_characters_like_user_input(spook):
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        ([' Raft:\t"репликация" <журнала>/логов? #1 *|\\ '], "Raft репликация журнала логов 1"),
+        (
+            "Распределённые системы — консенсус, репликация журнала, снимки состояния, перевыборы лидера и членство в кластере".split(),
+            "Распределённые системы — консенсус, репликация журнала, снимки состояния, перевы",
+        ),
+    ],
+    ids=["cleaned-topic", "long-topic-as-separate-arguments"],
+)
+def test_topic_command_cleans_and_limits_topic_preserving_the_address(spook, arguments, expected):
     note = finished_meeting(spook)
 
-    completed = topic_command(spook, note, ' Raft:\t"репликация" <журнала>/логов? #1 *|\\ ')
+    completed = topic_command(spook, note, *arguments)
 
-    assert completed.returncode == 0, completed.stderr
-    assert completed.stdout == f"{spook.meetings_dir / '2026-11-06 14-02 Raft репликация журнала логов 1.md'}\n"
-    assert note_names(spook) == ["2026-11-06 14-02 Raft репликация журнала логов 1.md"]
+    assert completed.returncode == 0 and completed.stdout == f"{note}\n"
+    assert read_page(note).properties["topic"] == expected
+    assert read_page(note).title == f"2026-11-06 14-02 {expected}"
 
 
-def test_long_topic_from_agent_given_as_separate_words_is_cut_to_80_characters(spook):
+def test_topic_matching_another_page_keeps_both_addresses_and_the_existing_page(spook):
+    first = finished_meeting(spook, topic="Raft")
+    original = first.read_bytes()
+    second = finished_meeting(spook)
+
+    completed = topic_command(spook, second, "Raft")
+
+    assert completed.returncode == 0 and completed.stdout == f"{second}\n"
+    assert set(spook.pages()) == {first, second} and first.read_bytes() == original
+    assert read_page(second).properties["topic"] == "Raft"
+
+
+def test_topic_command_refuses_old_markdown_foreign_page_external_path_and_symlink(spook, tmp_path):
+    external = tmp_path / "outside.html"
+    external.write_text("<h1>Внешняя страница</h1>", encoding="utf-8")
+    foreign = spook.meetings_dir / "foreign.html"
+    foreign.write_text("<h1>Страница пользователя</h1>", encoding="utf-8")
+    old = spook.meetings_dir / "Встреча.md"
+    old.write_text("## Транскрипт\n", encoding="utf-8")
+    link = spook.meetings_dir / "link.html"
+    link.symlink_to(external)
+
+    for path, reason in [
+        (external, "Заметка вне Wisp"), (foreign, "Это не Заметка Встречи"),
+        (old, "Это не Заметка Встречи"), (link, "Заметки нет"),
+    ]:
+        before = path.read_bytes()
+        completed = topic_command(spook, path, TOPIC)
+        assert completed.returncode == 1 and reason in completed.stderr
+        assert not completed.stdout and path.read_bytes() == before
+    assert link.is_symlink() and not spook.pages()
+
+
+@pytest.mark.parametrize("edited", [False, True], ids=["original-page", "concurrent-edit"])
+def test_setting_topic_can_retry_after_index_failure_and_preserves_concurrent_edits(spook, tmp_path, edited):
     note = finished_meeting(spook)
+    previous = read_page(note)
+    original = note.read_bytes().replace(b"\n", b"\r\n")
+    note.write_bytes(original)
+    indexer = spook.wisp_dir / "scripts/wiki_html.py"
+    native = indexer.read_bytes()
+    expected = original
+    script = ""
+    if edited:
+        expected += "<p>Исправление пользователя.</p>\r\n".encode()
+        edit = tmp_path / "edit.html"
+        edit.write_bytes(expected)
+        script = f"from pathlib import Path\nPath({str(note)!r}).write_bytes(Path({str(edit)!r}).read_bytes())\n"
+    indexer.write_text(script + "raise SystemExit(5)\n", encoding="utf-8")
+    topic_url = f"{spook.base_url}/agent/topic"
+    form = {"note": str(note), "topic": TOPIC}
+    try:
+        failed = spook.http.post(topic_url, data=form)
+    finally:
+        indexer.write_bytes(native)
 
-    completed = topic_command(
-        spook,
-        note,
-        *"Распределённые системы — консенсус, репликация журнала, снимки состояния, "
-        "перевыборы лидера и членство в кластере".split(" "),
-    )
+    assert failed.status_code == 409 and "Wisp" in failed.text
+    assert note.read_bytes() == expected
+    retry = spook.http.post(topic_url, data=form)
 
-    assert completed.returncode == 0, completed.stderr
-    assert note_names(spook) == [
-        "2026-11-06 14-02 Распределённые системы — консенсус, репликация журнала, снимки состояния, перевы.md"
-    ]
-
-
-def test_topic_that_repeats_name_of_another_note_gets_number_two(spook):
-    finished_meeting(spook, topic="Raft")
-    note = finished_meeting(spook)
-
-    completed = topic_command(spook, note, "Raft")
-
-    assert completed.returncode == 0, completed.stderr
-    assert completed.stdout == f"{spook.meetings_dir / '2026-11-06 14-02 Raft (2).md'}\n"
-    assert note_names(spook) == ["2026-11-06 14-02 Raft (2).md", "2026-11-06 14-02 Raft.md"]
-
-
-def test_topic_command_is_rejected_for_link_in_meetings_folder_that_leads_outside(spook, tmp_path: Path):
-    outside = tmp_path / "outside.md"
-    outside.write_text("## Транскрипт\n", encoding="utf-8")
-    spook.meetings_dir.mkdir(parents=True)
-    link = spook.meetings_dir / NOTE_WITHOUT_TOPIC
-    link.symlink_to(outside)
-
-    completed = topic_command(spook, link, "Репликация в Raft")
-
-    assert completed.returncode == 1
-    assert f"Заметки нет: {NOTE_WITHOUT_TOPIC}" in completed.stderr
-    assert note_names(spook) == [NOTE_WITHOUT_TOPIC]
+    assert retry.status_code == 200 and retry.text == str(note)
+    assert spook.pages() == [note]
+    assert read_page(note).properties == {**previous.properties, "topic": TOPIC}
+    assert read_page(note).transcript == previous.transcript
+    [entry] = entries(spook)
+    assert entry["file"] == note.name and TOPIC in entry["summary"]

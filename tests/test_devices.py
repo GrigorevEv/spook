@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from conftest import NO_SPEECH, NOTE_AFTER_START, SAMPLE_RATE, note_text, speech
+from conftest import NO_SPEECH, SAMPLE_RATE, speech
 from test_sources_list import sources_on_screen
 from spook.audio import Source
 
@@ -36,10 +36,10 @@ def test_capture_follows_default_device_change_without_stopping_session(spook):
     html = spook.page().text
     assert "Наушники USB" in html
     assert 'class="warning"' not in html, "смена устройства по умолчанию — не повод для предупреждения"
-    assert note_text(spook) == NOTE_AFTER_START + (
-        "\n**14:02 Собеседники:** Начало. Хвост.\n"
-        "\n*14:02 Системный звук переключён на «Наушники USB»*\n"
-        "\n**14:02 Собеседники:** После смены.\n"
+    assert spook.note_page().transcript == (
+        "14:02 Собеседники: Начало. Хвост.\n\n"
+        "14:02 Системный звук переключён на «Наушники USB»\n\n"
+        "14:02 Собеседники: После смены."
     )
 
 
@@ -66,10 +66,10 @@ def test_lost_device_leaves_mark_and_warning_and_capture_continues_from_new_defa
     html = spook.page().text
     assert '<p class="warning" role="alert">Системный звук: устройство «образцы» пропало, захват продолжается с «Динамики ноутбука»</p>' in html
     assert 'title="Динамики ноутбука"' in html
-    assert note_text(spook) == NOTE_AFTER_START + (
-        "\n**14:02 Собеседники:** До пропажи.\n"
-        "\n*14:02 Системный звук: устройство «образцы» пропало, захват продолжается с «Динамики ноутбука»*\n"
-        "\n**14:02 Собеседники:** После пропажи.\n"
+    assert spook.note_page().transcript == (
+        "14:02 Собеседники: До пропажи.\n\n"
+        "14:02 Системный звук: устройство «образцы» пропало, захват продолжается с «Динамики ноутбука»\n\n"
+        "14:02 Собеседники: После пропажи."
     )
 
 
@@ -113,7 +113,7 @@ def test_pinned_device_is_used_instead_of_default_and_ignores_default_changes(sp
     html = spook.page().text
     assert 'title="Виртуальное устройство"' in html
     assert "Наушники USB" not in html
-    assert note_text(spook) == NOTE_AFTER_START
+    assert spook.note_page().transcript == ""
 
 
 def test_lost_pinned_device_leaves_mark_and_warning_and_capture_falls_back_to_default(spook):
@@ -138,10 +138,10 @@ def test_lost_pinned_device_leaves_mark_and_warning_and_capture_falls_back_to_de
     assert "идёт" in state.data
     assert "<em>14:03 Системный звук: устройство «Виртуальное устройство» пропало, захват продолжается с «образцы»</em>" in mark.data
     assert "Системный звук: устройство «Виртуальное устройство» пропало, захват продолжается с «образцы»</p>" in spook.page().text
-    assert note_text(spook) == NOTE_AFTER_START + (
-        "\n*14:03 Системный звук: устройство «Виртуальное устройство» пропало, захват продолжается с «образцы»*\n"
-        "\n**14:03 Собеседники:** После пропажи.\n"
-        "\n*14:03 Системный звук переключён на «Наушники USB»*\n"
+    assert spook.note_page().transcript == (
+        "14:03 Системный звук: устройство «Виртуальное устройство» пропало, захват продолжается с «образцы»\n\n"
+        "14:03 Собеседники: После пропажи.\n\n"
+        "14:03 Системный звук переключён на «Наушники USB»"
     )
 
 
@@ -172,8 +172,8 @@ def test_lost_microphone_in_meeting_is_marked_by_clock_and_system_sound_keeps_it
     assert f'<p class="warning" role="alert">{expected}</p>' in html
     assert "Гарнитура»" in html and 'title="Гарнитура"' not in html
     assert spook.audio.active_sources == {Source.SYSTEM, Source.MIC}
-    assert note_text(spook) == NOTE_AFTER_START + (
-        "\n**14:02 Собеседники:** До пропажи.\n"
-        f"\n*14:03 {expected}*\n"
-        "\n**14:03 Я:** После пропажи.\n"
+    assert spook.note_page().transcript == (
+        f"14:02 Собеседники: До пропажи.\n\n"
+        f"14:03 {expected}\n\n"
+        "14:03 Я: После пропажи."
     )

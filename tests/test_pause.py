@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from conftest import NOTE_AFTER_START, note_text, speech
+from conftest import speech
 
 
 def test_pause_closes_current_utterance_and_shows_state_on_pause(spook):
@@ -23,7 +23,7 @@ def test_pause_closes_current_utterance_and_shows_state_on_pause(spook):
     assert ">Продолжить</button>" in html
     assert ">Пауза</button>" not in html
     assert ">Стоп</button>" in html and "disabled" not in html
-    assert note_text(spook) == NOTE_AFTER_START + "\n**14:02 Собеседники:** Начало. Хвост.\n"
+    assert spook.note_page().transcript == "14:02 Собеседники: Начало. Хвост."
 
 
 def test_resume_leaves_pause_mark_and_sound_during_pause_is_not_transcribed(spook):
@@ -49,10 +49,10 @@ def test_resume_leaves_pause_mark_and_sound_during_pause_is_not_transcribed(spoo
 
     assert "<em>Пауза 14:02–14:07</em>" in mark.data
     assert "14:07" in after.data
-    assert note_text(spook) == NOTE_AFTER_START + (
-        "\n**14:02 Собеседники:** Начало. Хвост.\n"
-        "\n*Пауза 14:02–14:07*\n"
-        "\n**14:07 Собеседники:** После Паузы.\n"
+    assert spook.note_page().transcript == (
+        "14:02 Собеседники: Начало. Хвост.\n\n"
+        "Пауза 14:02–14:07\n\n"
+        "14:07 Собеседники: После Паузы."
     )
 
 
@@ -74,17 +74,13 @@ def test_stop_from_pause_finishes_session_as_usual(spook):
         events.wait_for("state", containing="завершается")
         events.wait_for("state", containing="нет Сессии")
 
-    assert note_text(spook) == (
-        "---\n"
-        "date: 2026-11-06\n"
-        'start: "14:02"\n'
-        'end: "14:47"\n'
-        "tags: [встреча]\n"
-        "---\n"
-        "\n"
-        "## Транскрипт\n"
-        "\n**14:02 Собеседники:** Начало. Хвост.\n"
-    )
+    page = spook.note_page()
+    assert page.properties["date"] == "2026-11-06"
+    assert page.properties["start"] == "14:02"
+    assert page.properties["end"] == "14:47"
+    assert page.meta["tags"] == ["встреча"]
+    assert page.transcript == "14:02 Собеседники: Начало. Хвост."
+    assert page.summary == ""
     assert ">Старт</button>" in spook.page().text
 
 

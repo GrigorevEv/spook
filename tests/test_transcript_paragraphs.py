@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from conftest import NO_SPEECH, NOTE_AFTER_START, note_text, speech
+from conftest import NO_SPEECH, speech
 
 
 def cut_every(spook, seconds: float) -> None:
@@ -12,11 +12,9 @@ def test_adjacent_utterances_form_one_paragraph_with_one_time_at_start(spook):
     spook.start_meeting()
 
     spook.feed_system(speech(60))
-    spook.wait_until(lambda: "Третья реплика." in note_text(spook))
+    spook.wait_until(lambda: "Третья реплика." in spook.note_page().transcript)
 
-    assert note_text(spook) == NOTE_AFTER_START + (
-        "\n**14:02 Собеседники:** Первая реплика. Вторая реплика. Третья реплика.\n"
-    )
+    assert spook.note_page().transcript == "14:02 Собеседники: Первая реплика. Вторая реплика. Третья реплика."
 
 
 def test_page_updates_last_paragraph_in_place_instead_of_duplicating_it(spook):
@@ -43,11 +41,11 @@ def test_silence_longer_than_10_seconds_starts_new_paragraph(spook):
     spook.start_meeting()
 
     spook.feed_system(speech(25))
-    spook.wait_until(lambda: "Ещё слова." in note_text(spook))
+    spook.wait_until(lambda: "Ещё слова." in spook.note_page().transcript)
 
-    assert note_text(spook) == NOTE_AFTER_START + (
-        "\n**14:02 Собеседники:** Слова.\n"
-        "\n**14:02 Собеседники:** Ещё слова.\n"
+    assert spook.note_page().transcript == (
+        "14:02 Собеседники: Слова.\n\n"
+        "14:02 Собеседники: Ещё слова."
     )
 
 
@@ -57,9 +55,9 @@ def test_silence_shorter_than_10_seconds_continues_paragraph(spook):
     spook.start_meeting()
 
     spook.feed_system(speech(15))
-    spook.wait_until(lambda: "Ещё слова." in note_text(spook))
+    spook.wait_until(lambda: "Ещё слова." in spook.note_page().transcript)
 
-    assert note_text(spook) == NOTE_AFTER_START + "\n**14:02 Собеседники:** Слова. Ещё слова.\n"
+    assert spook.note_page().transcript == "14:02 Собеседники: Слова. Ещё слова."
 
 
 def test_paragraph_longer_than_700_characters_closes_and_next_utterance_starts_new_one(spook):
@@ -68,18 +66,17 @@ def test_paragraph_longer_than_700_characters_closes_and_next_utterance_starts_n
     spook.start_meeting()
 
     spook.feed_system(speech(80))
-    spook.wait_until(lambda: "Новый абзац." in note_text(spook))
+    spook.wait_until(lambda: "Новый абзац." in spook.note_page().transcript)
 
-    assert note_text(spook) == NOTE_AFTER_START + (
-        f"\n**14:02 Собеседники:** {first} {second} {third}\n"
-        "\n**14:03 Собеседники:** Новый абзац.\n"
-    )
+    assert spook.note_page().transcript == f'14:02 Собеседники: {first} {second} {third}\n\n14:03 Собеседники: Новый абзац.'
 
 
 def test_note_grows_only_by_appending_and_nothing_above_transcript_heading_changes(spook):
     spook.recognizer.say("Первая.", "Вторая.", NO_SPEECH, "Третья.")
     spook.start_meeting()
-    snapshots = [note_text(spook)]
+    original = spook.note_page()
+    assert original.transcript == ""
+    snapshots = [original.transcript]
 
     with spook.events() as events:
         for seconds, event, text in (
@@ -89,12 +86,14 @@ def test_note_grows_only_by_appending_and_nothing_above_transcript_heading_chang
         ):
             spook.feed_system(speech(seconds))
             events.wait_for(event, containing=text)
-            snapshots.append(note_text(spook))
+            page = spook.note_page()
+            assert page.meta == original.meta
+            assert page.summary == original.summary
+            snapshots.append(page.transcript)
 
     for before, after in zip(snapshots, snapshots[1:]):
         assert after.startswith(before.rstrip("\n")) and len(after) > len(before)
-    assert all(snapshot.startswith(NOTE_AFTER_START) for snapshot in snapshots)
-    assert snapshots[-1] == NOTE_AFTER_START + (
-        "\n**14:02 Собеседники:** Первая. Вторая.\n"
-        "\n**14:03 Собеседники:** Третья.\n"
+    assert snapshots[-1] == (
+        "14:02 Собеседники: Первая. Вторая.\n\n"
+        "14:03 Собеседники: Третья."
     )
