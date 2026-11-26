@@ -38,12 +38,12 @@ def desktop_entry(port: int) -> str:
 [Desktop Entry]
 Type=Application
 Name=Spook
-Comment=Заметки по звуку: Встречи и Лекции
+Comment=Заметки Встреч
 Exec=xdg-open http://localhost:{port}/
 Icon=audio-input-microphone
 Terminal=false
 Categories=Utility;
-Keywords=spook;заметки;встреча;лекция;
+Keywords=spook;заметки;встреча;
 StartupNotify=false
 """
 
@@ -105,6 +105,9 @@ def _link_skills(repo: Path, home: Path) -> None:
     if not skills:
         return
     target_dir = _user_skills(home)
+    old_skill = target_dir / "spook-lecture"
+    if old_skill.is_symlink() and old_skill.resolve() == (source / old_skill.name).resolve():
+        old_skill.unlink()
     target_dir.mkdir(parents=True, exist_ok=True)
     for skill in skills:
         link = target_dir / skill.name

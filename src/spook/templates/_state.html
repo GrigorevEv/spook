@@ -6,26 +6,13 @@
 <div class="controls">
   {% if view.state.value == "none" %}
   <form class="start" hx-post="/session/start" hx-target="#notice" hx-swap="innerHTML">
-    <fieldset class="kind-choice">
-      <legend>Вид Сессии</legend>
-      <label><input type="radio" name="kind" value="meeting"> Встреча</label>
-      <label><input type="radio" name="kind" value="lecture" checked> Лекция</label>
-    </fieldset>
     <label class="field"><span>Тема</span><input name="topic" maxlength="{{ TOPIC_MAX_LENGTH }}" placeholder="О чём Сессия — можно позже"></label>
-    <label class="field link"><span>Ссылка</span><input name="link" placeholder="https://… — видео или страница доклада"></label>
     <div class="buttons">
       <button type="submit" class="primary">Старт</button>
     </div>
   </form>
   {% else %}
-  <div class="kind-choice locked" aria-hidden="true">
-    <span{% if view.kind.value == "meeting" %} class="chosen"{% endif %}>Встреча</span>
-    <span{% if view.kind.value == "lecture" %} class="chosen"{% endif %}>Лекция</span>
-  </div>
   <label class="field"><span>Тема</span><input name="topic" value="{{ view.topic }}" maxlength="{{ TOPIC_MAX_LENGTH }}" placeholder="О чём Сессия — можно позже" hx-post="/session/topic" hx-trigger="change" hx-target="#notice" hx-swap="innerHTML"{% if view.state.value == "finishing" %} disabled{% endif %}></label>
-  {% if view.kind.value == "lecture" %}
-  <label class="field"><span>Ссылка</span><input name="link" value="{{ view.link }}" placeholder="https://… — видео или страница доклада" hx-post="/session/link" hx-trigger="change" hx-target="#notice" hx-swap="innerHTML"{% if view.state.value == "finishing" %} disabled{% endif %}></label>
-  {% endif %}
   <div class="buttons">
     {% if view.state.value == "running" %}
     <form hx-post="/session/pause" hx-target="#notice" hx-swap="innerHTML">

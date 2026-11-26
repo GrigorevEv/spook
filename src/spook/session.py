@@ -19,7 +19,7 @@ from spook.agent import AgentJob, AgentJobView, AgentQueue
 from spook.audio import SAMPLE_RATE, AudioInput, AudioSegment, Capture, CaptureUnavailable, DeviceChange, Level, Source
 from spook.clock import Clock, Timer
 from spook.cutting import SpeechDetectorFactory, UtteranceCutter
-from spook.note import Note, NoteNotFound, clean_link, clean_topic, find_session_note
+from spook.note import Note, NoteNotFound, clean_topic, find_session_note
 
 from spook.notify import send_notification
 from spook.recognizer import RecognitionUnavailable, Recognizer
@@ -50,7 +50,6 @@ class SessionView:
     elapsed_seconds: int = 0
     note_path: Path | None = None
     topic: str = ""
-    link: str = ""
     entries: tuple[Entry, ...] = ()
     sources: tuple[SourceView, ...] = ()
     warnings: tuple[str, ...] = ()
@@ -122,12 +121,6 @@ _FINISH = object()
 ACTIVITY_SECONDS = 30
 BREAK_SECONDS = 90
 
-SOURCES_BY_KIND = {
-    SessionKind.MEETING: (Source.SYSTEM, Source.MIC),
-    SessionKind.LECTURE: (Source.SYSTEM,),
-}
-
-
 @dataclass
 class _SourceRun:
     cutter: UtteranceCutter
@@ -155,7 +148,6 @@ class _Run:
     activity_timer: Timer | None = None
     topic: str = ""
     named_topic: str = ""
-    link: str = ""
     transcript: Transcript = field(init=False)
     work: queue.Queue = field(default_factory=queue.Queue)
     held: list[Utterance] = field(default_factory=list)
@@ -173,10 +165,7 @@ class _Run:
 
     def __post_init__(self) -> None:
         self.alive_at = self.started_at
-        if self.kind is SessionKind.MEETING:
-            self.transcript = Transcript(time_label=self.clock_label, speakers=True)
-        else:
-            self.transcript = Transcript(time_label=self.offset_label)
+        self.transcript = Transcript(time_label=self.clock_label, speakers=True)
 
     def open_interval(self, now: datetime) -> None:
         self.running_since = now
@@ -203,9 +192,6 @@ class _Run:
     def clock_label(self, offset: float) -> str:
         return f"{self.clock_at(self.captured_before_restart + offset):%H:%M}"
 
-    def offset_label(self, offset: float) -> str:
-        return format_offset(self.captured_before_restart + offset)
-
 
 class SessionService:
     def __init__(
@@ -231,7 +217,7 @@ class SessionService:
         self._store = SessionStore(record_path)
         agent.on_change = self._on_agent_change
 
-    def start(self, kind: SessionKind, topic: str = "", link: str = "") -> SessionView:
+    def start(self, kind: SessionKind = SessionKind.MEETING, topic: str = "") -> SessionView:
         with self._lock:
             if self._state is not SessionState.NONE:
                 raise CommandRejected(f"Сессия уже {self._state.label}")
@@ -243,19 +229,18 @@ class SessionService:
             folder = settings.for_kind(kind).folder
             started_at = self._clock.now()
             topic = clean_topic(topic)
-            link = clean_link(link) if kind is SessionKind.LECTURE else ""
             try:
                 sources = {
                     source: _SourceRun(UtteranceCutter(source, settings.recognition, self._speech_detector()))
-                    for source in SOURCES_BY_KIND[kind]
+                    for source in Source
                 }
             except RecognitionUnavailable as error:
                 raise CommandRejected(str(error)) from error
             try:
-                note = Note.create(folder, started_at, kind, topic, link)
+                note = Note.create(folder, started_at, kind, topic)
             except OSError as error:
                 raise CommandRejected(
-                    f"Нельзя писать в папку {_folder_name(kind)} {folder}: {error.strerror or error}"
+                    f"Нельзя писать в папку Встреч {folder}: {error.strerror or error}"
                 ) from error
             run = _Run(
                 kind=kind,
@@ -266,8 +251,7 @@ class SessionService:
                 last_speech_at=started_at,
                 topic=topic,
                 named_topic=topic,
-                link=link,
-                pinned={source: settings.sources.for_source(source) for source in SOURCES_BY_KIND[kind]},
+                pinned={source: settings.sources.for_source(source) for source in Source},
             )
             run.open_interval(started_at)
             try:
@@ -350,30 +334,16 @@ class SessionService:
 
     def set_topic(self, topic: str) -> SessionView:
         with self._lock:
-            run = self._changeable_run()
+            if self._state is SessionState.NONE:
+                raise CommandRejected("Сессии нет")
+            if self._state is SessionState.FINISHING:
+                raise CommandRejected("Сессия уже завершается")
+            run = self._run
+            assert run is not None
             run.topic = clean_topic(topic)
             self._save(run)
             self._publish(StateChanged(self.view()))
             return self.view()
-
-    def set_link(self, link: str) -> SessionView:
-        with self._lock:
-            run = self._changeable_run()
-            if run.kind is not SessionKind.LECTURE:
-                raise CommandRejected("Ссылка — только у Лекции")
-            run.link = clean_link(link)
-            run.note.set_link(run.link)
-            self._save(run)
-            self._publish(StateChanged(self.view()))
-            return self.view()
-
-    def _changeable_run(self) -> _Run:
-        if self._state is SessionState.NONE:
-            raise CommandRejected("Сессии нет")
-        if self._state is SessionState.FINISHING:
-            raise CommandRejected("Сессия уже завершается")
-        assert self._run is not None
-        return self._run
 
     def rename_note(self, note_path: Path, topic: str) -> Path:
         topic = clean_topic(topic)
@@ -419,14 +389,13 @@ class SessionService:
             note=note,
             sources={
                 source: _SourceRun(UtteranceCutter(source, settings.recognition, self._speech_detector()))
-                for source in SOURCES_BY_KIND[record.kind]
+                for source in Source
             },
             auto_stop=timedelta(minutes=settings.auto_stop_minutes),
             last_speech_at=record.last_speech_at or record.last_active_at,
             topic=record.topic,
             named_topic=record.named_topic,
-            link=record.link,
-            pinned={source: settings.sources.for_source(source) for source in SOURCES_BY_KIND[record.kind]},
+            pinned={source: settings.sources.for_source(source) for source in Source},
             captured_before_restart=record.captured_seconds,
         )
         run.captured_before = record.captured_seconds
@@ -477,7 +446,6 @@ class SessionService:
                 elapsed_seconds=max(0, int(run.captured_seconds(self._clock.now()))),
                 note_path=run.note.path,
                 topic=run.topic,
-                link=run.link,
                 entries=run.transcript.entries,
                 sources=tuple(SourceView(source, name) for source, name in run.devices.items()),
                 warnings=tuple(run.warnings.values()),
@@ -549,7 +517,6 @@ class SessionService:
                 kind=run.kind,
                 topic=run.topic,
                 named_topic=run.named_topic,
-                link=run.link,
                 state=self._state,
                 started_at=run.started_at,
                 captured_seconds=run.captured_seconds(run.alive_at),
@@ -586,7 +553,7 @@ class SessionService:
         if self._state is SessionState.RUNNING:
             run.close_interval(since)
             self._flush_cutters(run)
-            mark = _gap_mark(run, "Пропуск", since, until)
+            mark = _gap_mark("Пропуск", since, until)
             run.open_interval(until)
             self._cancel_auto_stop(run)
             self._schedule_auto_stop(run)
@@ -683,7 +650,7 @@ class SessionService:
             now = self._clock.now()
             previous = run.devices.get(change.source, "")
             run.devices[change.source] = change.device_name or NO_DEVICE
-            mark = DeviceMark(_mark_time(run, now), change.source, change.device_name, lost=previous if change.lost else "")
+            mark = DeviceMark(f"{now:%H:%M}", change.source, change.device_name, lost=previous if change.lost else "")
             if change.lost:
                 run.warnings[change.source] = mark.text
                 run.pinned.pop(change.source, None)
@@ -802,25 +769,11 @@ class _Notice:
 
 def _pause_mark(run: _Run, resumed_at: datetime) -> PauseMark:
     assert run.paused_at is not None
-    return _gap_mark(run, "Пауза", run.paused_at, resumed_at)
+    return _gap_mark("Пауза", run.paused_at, resumed_at)
 
 
-def _gap_mark(run: _Run, title: str, since: datetime, until: datetime) -> PauseMark:
-    if run.kind is SessionKind.LECTURE:
-        start = run.captured_before
-        end = start + (until - since).total_seconds()
-        return PauseMark(format_offset(start), format_offset(end), title)
+def _gap_mark(title: str, since: datetime, until: datetime) -> PauseMark:
     return PauseMark(f"{since:%H:%M}", f"{until:%H:%M}", title)
-
-
-def _mark_time(run: _Run, now: datetime) -> str:
-    if run.kind is SessionKind.LECTURE:
-        return format_offset(run.captured_seconds(now))
-    return f"{now:%H:%M}"
-
-
-def _folder_name(kind: SessionKind) -> str:
-    return {SessionKind.LECTURE: "Лекций", SessionKind.MEETING: "Встреч"}[kind]
 
 
 def _silence_label(auto_stop: timedelta) -> str:

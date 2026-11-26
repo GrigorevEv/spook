@@ -108,12 +108,12 @@ def create_app(
         return HTMLResponse("")
 
     @app.post("/session/start", response_class=HTMLResponse)
-    def start_session(kind: str = Form(), topic: str = Form(""), link: str = Form("")) -> HTMLResponse:
+    def start_session(kind: str = Form("meeting"), topic: str = Form("")) -> HTMLResponse:
         try:
             session_kind = SessionKind(kind)
         except ValueError:
             return _rejected(render, "Неизвестный вид Сессии")
-        return session_command(lambda: service.start(session_kind, topic=topic, link=link))
+        return session_command(lambda: service.start(session_kind, topic=topic))
 
     @app.post("/session/pause", response_class=HTMLResponse)
     def pause_session() -> HTMLResponse:
@@ -130,10 +130,6 @@ def create_app(
     @app.post("/session/topic", response_class=HTMLResponse)
     def set_topic(topic: str = Form("")) -> HTMLResponse:
         return session_command(lambda: service.set_topic(topic))
-
-    @app.post("/session/link", response_class=HTMLResponse)
-    def set_link(link: str = Form("")) -> HTMLResponse:
-        return session_command(lambda: service.set_link(link))
 
     def session_note() -> Path | None:
         view = service.view()
@@ -157,19 +153,6 @@ def create_app(
         except notes_module.NoteRefused as refused:
             return _rejected(render, str(refused))
         return HTMLResponse(render("_done.html", text=f"Открываю в Obsidian: {path.stem}"))
-
-    @app.post("/notes/wiki", response_class=HTMLResponse)
-    def open_wiki_page(note: str = Form("")) -> HTMLResponse:
-        settings = load_settings()
-        try:
-            path, kind = notes_module.find_note(settings, note)
-            if kind is not SessionKind.LECTURE:
-                raise notes_module.NoteRefused("Страница Вики есть только у Лекции")
-            uri = notes_module.wiki_page_uri(settings.programs.wiki, path.stem)
-            notes_module.open_uri(settings.programs.open, uri)
-        except notes_module.NoteRefused as refused:
-            return _rejected(render, str(refused))
-        return HTMLResponse(render("_done.html", text=f"Открываю страницу Вики: {path.stem}"))
 
     @app.post("/notes/agent", response_class=HTMLResponse)
     def run_agent(

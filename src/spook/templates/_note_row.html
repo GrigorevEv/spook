@@ -15,12 +15,6 @@
       <input type="hidden" name="note" value="{{ entry.path }}">
       <button type="submit">Открыть в Obsidian</button>
     </form>
-    {% if entry.kind.value == "lecture" %}
-    <form hx-post="/notes/wiki" hx-target="#notice" hx-swap="innerHTML">
-      <input type="hidden" name="note" value="{{ entry.path }}">
-      <button type="submit">Открыть страницу Вики</button>
-    </form>
-    {% endif %}
     {% if entry.has_log %}<a class="log" href="/agent/log?note={{ entry.name|urlencode }}&amp;kind={{ entry.log_kind.value }}">Журнал</a>{% endif %}
     {% if not entry.in_session and not entry.agent_busy %}
     {% set choice = agent_choices[entry.kind.value] %}

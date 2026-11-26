@@ -318,58 +318,6 @@ main.session {
   font-size: 13px;
 }
 
-.kind-choice {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  margin: 0;
-  padding: 0;
-  min-width: 0;
-  background: var(--field);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.kind-choice label,
-.kind-choice span {
-  padding: 7px 0;
-  color: var(--muted);
-  text-align: center;
-}
-
-.kind-choice label {
-  cursor: pointer;
-}
-
-.kind-choice > * + * {
-  border-left: 1px solid var(--line);
-}
-
-.kind-choice label:has(:checked),
-.kind-choice .chosen {
-  background: var(--accent);
-  color: var(--on-accent);
-}
-
-.kind-choice label:has(:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-.kind-choice input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.kind-choice.locked span:not(.chosen) {
-  opacity: 0.6;
-}
-
-.start:has(input[name="kind"][value="meeting"]:checked) .field.link {
-  display: none;
-}
-
 .buttons {
   display: grid;
   grid-template-columns: 1fr 1fr;

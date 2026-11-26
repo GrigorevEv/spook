@@ -15,15 +15,14 @@ from spook.audio import Source
 
 class SessionKind(StrEnum):
     MEETING = "meeting"
-    LECTURE = "lecture"
 
     @property
     def label(self) -> str:
-        return {SessionKind.MEETING: "Встреча", SessionKind.LECTURE: "Лекция"}[self]
+        return "Встреча"
 
     @property
     def tag(self) -> str:
-        return {SessionKind.MEETING: "встреча", SessionKind.LECTURE: "лекция"}[self]
+        return "встреча"
 
 
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
@@ -89,17 +88,12 @@ class Settings:
     meeting: KindSettings = field(
         default_factory=lambda: KindSettings(_home("~/Documents/notes/работа"), "spook-meeting")
     )
-    lecture: KindSettings = field(
-        default_factory=lambda: KindSettings(_home("~/learn/wiki/lectures"), "spook-lecture")
-    )
     sources: SourceSettings = field(default_factory=SourceSettings)
     recognition: RecognitionSettings = field(default_factory=RecognitionSettings)
     programs: ProgramSettings = field(default_factory=ProgramSettings)
     agent: AgentSettings = field(default_factory=AgentSettings)
 
     def for_kind(self, kind: SessionKind) -> KindSettings:
-        if kind is SessionKind.LECTURE:
-            return replace(self.lecture, agent_cwd=self.lecture.agent_cwd or self.wiki)
         return self.meeting
 
     def kind_folders(self) -> list[tuple[SessionKind, Path]]:
@@ -138,7 +132,6 @@ def load_settings(path: Path | None = None) -> Settings:
         terms_dictionary=_path_or(raw.get("terms_dictionary"), defaults.terms_dictionary),
         wiki=_path_or(raw.get("wiki"), defaults.wiki),
         meeting=_kind(raw.get("meeting", {}), defaults.meeting),
-        lecture=_kind(raw.get("lecture", {}), defaults.lecture),
         sources=_merge(defaults.sources, raw.get("sources", {})),
         recognition=_recognition(raw.get("recognition", {}), defaults.recognition),
         programs=_programs(raw.get("programs", {}), defaults.programs),

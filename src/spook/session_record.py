@@ -37,7 +37,6 @@ class SessionRecord:
     kind: SessionKind
     topic: str
     named_topic: str
-    link: str
     state: SessionState
     started_at: datetime
     captured_seconds: float
@@ -51,7 +50,6 @@ class SessionRecord:
             "kind": self.kind.value,
             "topic": self.topic,
             "named_topic": self.named_topic,
-            "link": self.link,
             "state": self.state.value,
             "started_at": self.started_at.isoformat(),
             "captured_seconds": round(self.captured_seconds, 3),
@@ -69,7 +67,6 @@ class SessionRecord:
             kind=SessionKind(data["kind"]),
             topic=data["topic"],
             named_topic=data["named_topic"],
-            link=data["link"],
             state=SessionState(data["state"]),
             started_at=datetime.fromisoformat(data["started_at"]),
             captured_seconds=float(data["captured_seconds"]),

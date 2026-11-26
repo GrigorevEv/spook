@@ -58,10 +58,12 @@ def find_session_note(raw: str | Path, folders: Iterable[tuple[SessionKind, Path
             links_outside = candidate.resolve().parent != folder.resolve()
             if links_outside or not candidate.is_file():
                 raise NoteNotFound(f"Заметки нет: {path.name}")
+            if "лекция" in read_properties(candidate.read_text(encoding="utf-8", errors="replace")).get("tags", ""):
+                raise NoteNotFound(f"Это не Заметка Встречи: {path.name}")
         except OSError as error:
             raise NoteNotFound(f"Заметка недоступна: {error.strerror or error}") from error
         return candidate, kind
-    raise NoteNotFound(f"Заметка вне папок Встреч и Лекций: {raw}")
+    raise NoteNotFound(f"Заметка вне папки Встреч: {raw}")
 
 
 def read_properties(text: str) -> dict[str, str]:
@@ -105,15 +107,6 @@ def clean_topic(raw: str) -> str:
     return " ".join(replaced.split())[:TOPIC_MAX_LENGTH].strip()
 
 
-def clean_link(raw: str) -> str:
-    return "".join(ch for ch in raw if ch.isprintable()).strip()
-
-
-def _yaml_string(value: str) -> str:
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
-
-
 class Note:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -141,17 +134,15 @@ class Note:
 
     @classmethod
     def create(
-        cls, folder: Path, started_at: datetime, kind: SessionKind, topic: str = "", link: str = ""
+        cls, folder: Path, started_at: datetime, kind: SessionKind, topic: str = ""
     ) -> Note:
         folder.mkdir(parents=True, exist_ok=True)
-        link = clean_link(link)
         header = (
             "---\n"
             f"date: {started_at:%Y-%m-%d}\n"
             f'start: "{started_at:%H:%M}"\n'
             f"tags: [{kind.tag}]\n"
-            + (f"source: {_yaml_string(link)}\n" if link else "")
-            + "---\n"
+            "---\n"
             "\n"
             f"{TRANSCRIPT_HEADING}\n"
         )
@@ -185,15 +176,6 @@ class Note:
             start_index = next(i for i, line in enumerate(kept) if line.startswith("start:"))
             kept.insert(start_index + 1, f'end: "{ended_at:%H:%M}"')
             return kept
-
-        self._edit_properties(edit)
-
-    def set_link(self, link: str) -> None:
-        link = clean_link(link)
-
-        def edit(properties: list[str]) -> list[str]:
-            kept = [line for line in properties if not line.startswith("source:")]
-            return kept + ([f"source: {_yaml_string(link)}"] if link else [])
 
         self._edit_properties(edit)
 
