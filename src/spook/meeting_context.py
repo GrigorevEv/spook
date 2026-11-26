@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from urllib.parse import quote
 
+from spook import wisp
 from spook.note import Note
 from spook.settings import Settings
 
@@ -28,13 +28,6 @@ def ensure_terms_dictionary(path: Path) -> None:
         pass
 
 
-def note_paths(root: Path) -> list[Path]:
-    if not root.is_dir():
-        return []
-    found = (path.relative_to(root) for path in root.rglob("*.md") if path.is_file())
-    return sorted(path for path in found if not any(part.startswith(".") for part in path.parts))
-
-
 def meeting_input(settings: Settings, note: Note, skill: str) -> str:
     if not skill or Path(skill).name != skill or skill in {".", ".."}:
         raise ValueError("Недопустимое имя Скилла")
@@ -44,19 +37,15 @@ def meeting_input(settings: Settings, note: Note, skill: str) -> str:
     except OSError as error:
         raise ValueError(f"Не удалось прочитать Скилл {skill}. Проверьте {skill_path} или выполните spook install.") from error
     ensure_terms_dictionary(settings.terms_dictionary)
-    vault = settings.meeting.folder.parent
-    wiki = settings.wiki
     return json.dumps({
         "skill": instructions,
         "date": note.date,
         "topic": note.topic,
         "terms_dictionary": settings.terms_dictionary.read_text(encoding="utf-8"),
-        "vault_notes": sorted({path.stem for path in note_paths(vault)} - {note.path.stem}),
-        "wiki_notes": [_cross_vault_link(wiki.name, path) for path in note_paths(wiki)],
+        "wisp_notes": [
+            {"title": entry["title"], "file": entry["file"]}
+            for entry in wisp.index_entries(note.folder)
+            if entry["file"] != note.path.name
+        ],
         "transcript": note.transcript_markdown(),
     }, ensure_ascii=False)
-
-
-def _cross_vault_link(vault_name: str, path: Path) -> str:
-    file = quote(path.with_suffix("").as_posix(), safe="")
-    return f"[{path.stem}](obsidian://open?vault={quote(vault_name, safe='')}&file={file})"

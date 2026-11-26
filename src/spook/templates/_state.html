@@ -26,7 +26,7 @@
     <button type="button" disabled>Пауза</button>
     {% endif %}
     <form hx-post="/session/stop" hx-target="#notice" hx-swap="innerHTML">
-      <button type="submit"{% if view.state.value == "finishing" %} disabled{% endif %}>Стоп</button>
+      <button type="submit"{% if view.state.value == "finishing" and not view.publish_error %} disabled{% endif %}>{{ "Повторить сохранение" if view.publish_error else "Стоп" }}</button>
     </form>
   </div>
   {% endif %}
@@ -42,6 +42,7 @@
   {% endfor %}
 </ul>
 {% endif %}
+{% if view.publish_error %}<p class="error" role="alert">{{ view.publish_error }}</p>{% endif %}
 {% for warning in view.warnings %}
 <p class="warning" role="alert">{{ warning }}</p>
 {% endfor %}

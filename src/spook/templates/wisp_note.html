@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ meta.title }}</title>
+<meta name="description" content="{{ meta.title }}">
+<script type="application/json" id="wiki-meta">{{ metadata|safe }}</script>
+<script type="application/json" id="wiki-tips">{}</script>
+{{ css|safe }}
+</head>
+<body>
+<div class="top"><div class="top-in"><a class="home" href="index.html" target="_top">Wisp</a><span class="crumbs">Встречи</span></div></div>
+<div class="wrap">
+<h1>{{ meta.title }}</h1>
+<p class="sub" id="meeting-time">{{ meta.spook.date }} · {{ meta.spook.start }}</p>
+<section class="card" id="выжимка">
+<h2>Выжимка</h2>
+</section>
+<section class="card" id="транскрипт">
+<h2>Транскрипт</h2>
+</section>
+</div>
+{{ engine|safe }}
+</body>
+</html>

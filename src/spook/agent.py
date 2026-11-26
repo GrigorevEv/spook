@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -13,7 +14,8 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 from queue import Queue
-from typing import BinaryIO, Callable
+from typing import Callable, TextIO
+from uuid import uuid4
 
 from spook import codex
 from spook.meeting_context import meeting_input
@@ -65,7 +67,8 @@ class AgentJob:
 
     @property
     def note_name(self) -> str:
-        return self.note_path.stem
+        return Note(self.note_path).name
+
 
 @dataclass(frozen=True)
 class AgentResult:
@@ -97,7 +100,7 @@ class _Record:
     state: SummaryState = SummaryState.QUEUED
     message: str = ""
     warning: str = ""
-    snapshot: str | None = None
+    snapshot_id: str | None = None
 
     def view(self) -> AgentJobView:
         return AgentJobView(self.job, self.state, self.message, self.warning)
@@ -110,7 +113,7 @@ class _Record:
             "model": self.job.model,
             "effort": self.job.effort,
             "state": self.state.value,
-            "snapshot": self.snapshot,
+            "snapshot_id": self.snapshot_id,
         }
 
     @classmethod
@@ -123,7 +126,10 @@ class _Record:
             model=model,
             effort=effort,
         )
-        return cls(job, SummaryState(data["state"]), snapshot=data.get("snapshot"))
+        snapshot_id = data.get("snapshot_id")
+        return cls(job, SummaryState(data["state"]), snapshot_id=(
+            snapshot_id if isinstance(snapshot_id, str) and re.fullmatch("[0-9a-f]{32}", snapshot_id) else None
+        ))
 
 
 INTERRUPTED = "Агент прерван перезапуском службы"
@@ -159,7 +165,7 @@ class AgentQueue:
         path = self._log_dir / QUEUE_NAME
         try:
             items = json.loads(path.read_text(encoding="utf-8"))
-            saved = [_Record.from_json(item) for item in items if item["kind"] == SessionKind.MEETING]
+            saved = [_Record.from_json(item) for item in items if item["kind"] == SessionKind.MEETING and Path(item["note"]).suffix == ".html"]
         except FileNotFoundError:
             return
         except (OSError, ValueError, KeyError, TypeError):
@@ -178,20 +184,27 @@ class AgentQueue:
 
     def _interrupted(self, record: _Record) -> None:
         job = record.job
-        warning = TranscriptGuard(record.snapshot).restore(job.note_path) if record.snapshot is not None else ""
+        warning = ""
+        if record.snapshot_id:
+            try:
+                path = TranscriptGuard.snapshot_path(job.note_path, record.snapshot_id)
+                warning = TranscriptGuard.recover(job.note_path, path)
+                _remove_agent_files(path)
+            except (ValueError, OSError):
+                warning = "Не удалось восстановить Транскрипт по снимку в Wisp."
         result = AgentResult(SummaryState.FAILED, INTERRUPTED, warning=warning)
         log.warning("Агент закончил: %s — %s: %s", job.note_name, result.state.label, INTERRUPTED)
         try:
-            journal_path = self.log_path(job.note_name, job.kind)
+            journal_path = self.log_path(job.note_path.stem, job.kind)
             journal_path.parent.mkdir(parents=True, exist_ok=True)
-            with journal_path.open("a", encoding="utf-8") as journal:
+            with _open_journal(journal_path) as journal:
                 if warning:
                     journal.write(f"\nОхрана Транскрипта: {warning}\n")
                 journal.write(_closing_line(result))
         except OSError:
             log.exception("Журнал Агента %s не дописан", job.note_name)
         with self._lock:
-            self._records.append(replace(record, state=result.state, message=result.message, warning=warning, snapshot=None))
+            self._records.append(replace(record, state=result.state, message=result.message, warning=warning, snapshot_id=None))
         self.on_change()
         self._notify(job, result)
 
@@ -233,6 +246,8 @@ class AgentQueue:
         self.on_change()
 
     def log_path(self, note_name: str, kind: SessionKind) -> Path:
+        if _escapes_log_dir(note_name):
+            raise ValueError("Недопустимое имя Журнала Агента")
         return self._log_dir / kind.value / f"{note_name}.log"
 
     def _existing_log(self, note_name: str, kind: SessionKind | None) -> Path | None:
@@ -241,7 +256,7 @@ class AgentQueue:
         kinds = [kind] if kind is not None else list(SessionKind)
         legacy_log = self._log_dir / f"{note_name}.log"
         for path in [*(self.log_path(note_name, each) for each in kinds), legacy_log]:
-            if path.is_file():
+            if path.is_file() and not path.is_symlink():
                 return path
         return None
 
@@ -280,8 +295,7 @@ class AgentQueue:
             record.state = state
             record.message = message
             record.warning = warning
-            if state is not SummaryState.RUNNING:
-                record.snapshot = None
+            record.snapshot_id = uuid4().hex if state is SummaryState.RUNNING else None
             self._persist_under_lock()
         self.on_change()
 
@@ -292,55 +306,44 @@ class AgentQueue:
     def _run(self, record: _Record) -> AgentResult:
         settings = self._load_settings()
         timeout = settings.agent.timeout_minutes * 60
-        with self.note_lock:
-            job = self._current_job(record)
-            log_path = self.log_path(job.note_name, job.kind)
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            journal_file = log_path.open("a+b")
-        with journal_file as journal, tempfile.TemporaryDirectory(prefix="spook-codex-") as temporary:
+        job = self._current_job(record)
+        assert record.snapshot_id is not None
+        snapshot = TranscriptGuard.snapshot_path(job.note_path, record.snapshot_id)
+        output = snapshot.with_suffix(".json")
+        log_path = self.log_path(job.note_path.stem, job.kind)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with _open_journal(log_path) as journal, tempfile.TemporaryDirectory(prefix="spook-codex-") as temporary:
             folder = Path(temporary)
-            output = folder / "result.json"
             command = _wrapped(settings.agent.wrapper, timeout) + codex.command(
                 settings.programs.codex, job.model, job.effort, output
             )
             if journal.tell():
-                journal.write(b"\n")
-            journal.write(f"$ {shlex.join(command)}\n(рабочий каталог: {folder})\n\n".encode("utf-8"))
+                journal.write("\n")
+            journal.write(f"$ {shlex.join(command)}\n(рабочий каталог: {folder})\n\n")
             journal.flush()
-            output_start = journal.tell()
             try:
                 with self.note_lock:
                     job = self._current_job(record)
-                    note = Note(job.note_path)
-                    guard = TranscriptGuard.remember(job.note_path)
-                    with self._lock:
-                        record.snapshot = guard.snapshot
-                        self._persist_under_lock()
-                    prompt = meeting_input(settings, note, job.skill)
-                returncode, stderr_bytes, timed_out = _launch(command, folder, journal, timeout, prompt)
-            except (OSError, ValueError) as error:
-                result = AgentResult(SummaryState.FAILED, f"Не удалось запустить Codex: {error}")
-            else:
-                journal.seek(output_start)
-                stdout = journal.read().decode("utf-8", errors="replace")
-                stderr = stderr_bytes.decode("utf-8", errors="replace")
-                if stderr.strip():
-                    journal.write(f"\n--- stderr ---\n{stderr}".encode("utf-8"))
-                reason = (
-                    f"Превышено время: Агент работал дольше {settings.agent.timeout_minutes:g} мин"
-                    if timed_out else codex.failure(stdout, stderr, returncode)
-                )
+                    guard = TranscriptGuard.remember(job.note_path, snapshot)
+                    prompt = meeting_input(settings, Note(job.note_path), job.skill)
+                returncode, reason, timed_out = _launch(command, folder, timeout, prompt, journal)
+                if timed_out:
+                    reason = f"Превышено время: Агент работал дольше {settings.agent.timeout_minutes:g} мин"
                 with self.note_lock:
                     note = Note(self._current_job(record).note_path)
                     warning = guard.restore(note.path)
                     if warning:
                         log.warning("Охрана Транскрипта, %s: %s", note.path.name, warning)
-                        journal.write(f"\nОхрана Транскрипта: {warning}\n".encode("utf-8"))
+                        journal.write(f"\nОхрана Транскрипта: {warning}\n")
                     result = self._save_reply(note, output, reason, returncode)
                     if result.warning:
-                        journal.write(f"\n{result.warning}\n".encode("utf-8"))
+                        journal.write("\nНе удалось применить Тему из ответа Codex.\n")
                     result = replace(result, warning=" ".join(filter(None, (warning, result.warning))))
-            journal.write(_closing_line(result).encode("utf-8"))
+            except (OSError, ValueError) as error:
+                result = AgentResult(SummaryState.FAILED, f"Не удалось запустить Codex: {error}")
+            finally:
+                _remove_agent_files(snapshot)
+            journal.write(_closing_line(result))
         return result
 
     def _save_reply(self, note: Note, output: Path, reason: str, returncode: int) -> AgentResult:
@@ -348,11 +351,16 @@ class AgentQueue:
             return AgentResult(SummaryState.FAILED, reason, returncode)
         try:
             reply = codex.read_reply(output)
-            if reply.summary == note.summary():
-                raise ValueError("Агент завершился, но Выжимка не обновлена")
-            note.set_summary(reply.summary)
-        except (OSError, ValueError) as error:
+        except ValueError as error:
             return AgentResult(SummaryState.FAILED, str(error), returncode)
+        except OSError:
+            return AgentResult(SummaryState.FAILED, "Не удалось прочитать ответ Codex", returncode)
+        try:
+            if note.same_summary(reply.summary):
+                return AgentResult(SummaryState.FAILED, "Агент завершился, но Выжимка не обновлена", returncode)
+            note.set_summary(reply.summary)
+        except (OSError, ValueError):
+            return AgentResult(SummaryState.FAILED, "Не удалось сохранить Выжимку в Wisp", returncode)
         warning = self.on_topic(note.path, reply.topic) if reply.topic and not note.has_topic else ""
         return AgentResult(SummaryState.DONE, returncode=returncode, warning=warning)
 
@@ -374,24 +382,39 @@ def _wrapped(wrapper: str, timeout: float) -> list[str]:
     return shlex.split(wrapper.replace("{timeout}", str(round(timeout)))) if wrapper.strip() else []
 
 
-def _launch(command: list[str], cwd: Path, journal: BinaryIO, timeout: float, prompt: str) -> tuple[int, bytes, bool]:
+def _open_journal(path: Path) -> TextIO:
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+    return os.fdopen(fd, "a", encoding="utf-8")
+
+
+def _remove_agent_files(snapshot: Path) -> None:
+    snapshot.unlink(missing_ok=True)
+    snapshot.with_suffix(".json").unlink(missing_ok=True)
+
+
+def _launch(command: list[str], cwd: Path, timeout: float, prompt: str, journal: TextIO) -> tuple[int, str, bool]:
     started = time.monotonic()
-    process = subprocess.Popen(
-        command, cwd=cwd, env=codex.environment(cwd), stdin=subprocess.PIPE, stdout=journal,
-        stderr=subprocess.PIPE, start_new_session=True,
-    )
-    try:
-        _, stderr = process.communicate(input=prompt.encode("utf-8"), timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _signal_group(process, signal.SIGTERM)
+    with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as stdout, tempfile.TemporaryFile(
+        "w+", encoding="utf-8", errors="replace"
+    ) as stderr:
+        process = subprocess.Popen(
+            command, cwd=cwd, env=codex.environment(cwd), stdin=subprocess.PIPE,
+            stdout=stdout, stderr=stderr, start_new_session=True,
+        )
         try:
-            _, stderr = process.communicate(timeout=KILL_GRACE_SECONDS)
+            process.communicate(input=prompt.encode("utf-8"), timeout=timeout)
+            timed_out = process.returncode != 0 and time.monotonic() - started >= timeout
         except subprocess.TimeoutExpired:
-            _signal_group(process, signal.SIGKILL)
-            _, stderr = process.communicate()
-        return process.returncode, stderr, True
-    wrapper_timed_out = process.returncode != 0 and time.monotonic() - started >= timeout
-    return process.returncode, stderr, wrapper_timed_out
+            timed_out = True
+            _signal_group(process, signal.SIGTERM)
+            try:
+                process.communicate(timeout=KILL_GRACE_SECONDS)
+            except subprocess.TimeoutExpired:
+                _signal_group(process, signal.SIGKILL)
+                process.communicate()
+        stdout.seek(0)
+        stderr.seek(0)
+        return process.returncode, codex.record_output(stdout, stderr, process.returncode, journal), timed_out
 
 
 def _signal_group(process: subprocess.Popen, signum: int) -> None:

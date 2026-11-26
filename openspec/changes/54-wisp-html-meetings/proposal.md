@@ -15,7 +15,7 @@ Issue: #54
 ### Modified Capabilities
 
 - `note`, `notes-screen`, `session-screen` — HTML-Заметка, открытие и просмотр состояния.
-- `session`, `transcript` — сохранение Транскрипта и восстановление Сессии.
+- `session`, `transcript`, `recognition`, `audio-capture` — сохранение Реплик и Отметок в HTML, восстановление Сессии.
 - `settings`, `service` — путь Wisp и показ во временном Хранилище.
 - `agent`, `skills` — охрана Транскрипта и сохранение Выжимки.
 

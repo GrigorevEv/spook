@@ -7,7 +7,7 @@ import queue
 import threading
 from bisect import insort
 from collections import deque
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from functools import partial
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -19,7 +19,7 @@ from spook.agent import AgentJob, AgentJobView, AgentQueue
 from spook.audio import SAMPLE_RATE, AudioInput, AudioSegment, Capture, CaptureUnavailable, DeviceChange, Level, Source
 from spook.clock import Clock, Timer
 from spook.cutting import SpeechDetectorFactory, UtteranceCutter
-from spook.note import Note, NoteNotFound, clean_topic, find_session_note
+from spook.note import Note, NoteNotFound, clean_topic, find_session_note, note_properties
 
 from spook.notify import send_notification
 from spook.recognizer import RecognitionUnavailable, Recognizer
@@ -53,6 +53,7 @@ class SessionView:
     entries: tuple[Entry, ...] = ()
     sources: tuple[SourceView, ...] = ()
     warnings: tuple[str, ...] = ()
+    publish_error: str = ""
     backlog_seconds: float = 0.0
     backlog_segments: int = 0
     agent: tuple[AgentJobView, ...] = ()
@@ -160,6 +161,7 @@ class _Run:
     paused_at: datetime | None = None
     backlog_samples: int = 0
     backlog_segments: int = 0
+    publish_error: str = ""
     ended_at: datetime | None = None
     captured_before_restart: float = 0.0
 
@@ -227,7 +229,7 @@ class SessionService:
             except RecognitionUnavailable as error:
                 raise CommandRejected(str(error)) from error
             settings = self._load_settings()
-            folder = settings.for_kind(kind).folder
+            folder = settings.wisp / "html"
             started_at = self._clock.now()
             topic = clean_topic(topic)
             try:
@@ -239,10 +241,8 @@ class SessionService:
                 raise CommandRejected(str(error)) from error
             try:
                 note = Note.create(folder, started_at, kind, topic)
-            except OSError as error:
-                raise CommandRejected(
-                    f"Нельзя писать в папку Встреч {folder}: {error.strerror or error}"
-                ) from error
+            except (OSError, UnicodeError) as error:
+                raise CommandRejected(f"Не удалось создать Заметку в Wisp {folder.parent}: {error}") from error
             run = _Run(
                 kind=kind,
                 started_at=started_at,
@@ -325,10 +325,13 @@ class SessionService:
         with self._lock:
             if self._state is SessionState.NONE:
                 raise CommandRejected("Сессии нет")
-            if self._state is SessionState.FINISHING:
-                raise CommandRejected("Сессия уже завершается")
             run = self._run
             assert run is not None
+            if self._state is SessionState.FINISHING:
+                if run.publish_error:
+                    self._finish(run)
+                    return self.view()
+                raise CommandRejected("Сессия уже завершается")
             self._begin_finishing(run)
         self._finish_capture(run)
         return self.view()
@@ -384,13 +387,24 @@ class SessionService:
         record = self._store.load()
         if record is None:
             return
-        if not record.note.is_file():
+        if record.note.suffix != ".html":
+            self._store.remove()
+            return
+        if not record.note.is_file() or record.note.is_symlink():
             log.warning("Заметки %s больше нет — сведения о Сессии удалены", record.note)
             self._store.remove()
             return
         settings = self._load_settings()
         now = self._clock.now()
         note = Note(record.note)
+        try:
+            valid = note_properties(note.read())
+        except (OSError, UnicodeError) as error:
+            log.warning("Не удалось прочитать Заметку %s: %s", record.note, error)
+            return
+        if not valid or (note.is_draft and record.note.stem != valid["id"]):
+            self._store.remove()
+            return
         run = _Run(
             kind=record.kind,
             started_at=record.started_at,
@@ -457,6 +471,7 @@ class SessionService:
                 entries=run.transcript.entries,
                 sources=tuple(SourceView(source, name) for source, name in run.devices.items()),
                 warnings=tuple(run.warnings.values()),
+                publish_error=run.publish_error,
                 backlog_seconds=run.backlog_samples / SAMPLE_RATE,
                 backlog_segments=run.backlog_segments,
                 agent=agent,
@@ -737,24 +752,31 @@ class SessionService:
             run.warnings.clear()
             self._write_held(run)
             has_utterances = bool(run.transcript.paragraphs)
+            run.publish_error = ""
             if has_utterances:
-                run.note.set_end(run.ended_at or self._clock.now())
-                if run.topic and run.topic != run.named_topic:
-                    try:
-                        run.note.rename_with_topic(run.topic)
-                    except OSError:
-                        log.exception("Заметку %s не удалось переименовать по Теме", run.note.path.name)
-                    else:
-                        run.named_topic = run.topic
+                try:
+                    if run.note.is_draft:
+                        if run.topic and run.topic != run.named_topic:
+                            run.note.rename_with_topic(run.topic)
+                            run.named_topic = run.topic
+                        run.note.set_end(run.ended_at or self._clock.now())
+                        run.note.publish()
+                    self._save(run)
+                    run.note.remove_draft()
+                except (OSError, UnicodeError) as error:
+                    run.publish_error = f"Не удалось сохранить Заметку в Wisp: {error}"
+                    log.warning("%s", run.publish_error)
+                    self._publish(StateChanged(self.view()))
+                    return
+                if self._agent.job_for(run.note.path) is None and not run.note.summary():
+                    settings = self._load_settings().for_kind(run.kind)
+                    self._agent.enqueue(AgentJob.for_note(run.note.path, run.kind, settings))
             else:
                 run.note.path.unlink(missing_ok=True)
                 self._run = None
             self._store.remove()
             self._state = SessionState.NONE
             self._publish(StateChanged(self.view()))
-            if has_utterances:
-                kind_settings = replace(self._load_settings().for_kind(run.kind), folder=run.note.path.parent)
-                self._agent.enqueue(AgentJob.for_note(run.note.path, run.kind, kind_settings))
 
     def _on_agent_change(self) -> None:
         with self._lock:

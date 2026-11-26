@@ -11,11 +11,13 @@
     {% if entry.warning %}<span class="warning">{{ entry.warning }}</span>{% endif %}
   </td>
   <td class="actions"><div class="row-actions">
-    <form hx-post="/notes/obsidian" hx-target="#notice" hx-swap="innerHTML">
+    {% if not entry.in_session %}
+    <form hx-post="/notes/wisp" hx-target="#notice" hx-swap="innerHTML">
       <input type="hidden" name="note" value="{{ entry.path }}">
-      <button type="submit">Открыть в Obsidian</button>
+      <button type="submit">Открыть в Wisp</button>
     </form>
-    {% if entry.has_log %}<a class="log" href="/agent/log?note={{ entry.name|urlencode }}&amp;kind={{ entry.log_kind.value }}">Журнал</a>{% endif %}
+    {% endif %}
+    {% if entry.has_log %}<a class="log" href="/agent/log?note={{ entry.path.stem|urlencode }}&amp;kind={{ entry.log_kind.value }}">Журнал</a>{% endif %}
     {% if not entry.in_session and not entry.agent_busy %}
     {% set choice = agent_choices[entry.kind.value] %}
     <details class="agent-run">

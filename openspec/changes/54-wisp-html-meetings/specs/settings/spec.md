@@ -25,9 +25,9 @@ Spook SHALL читать настройки из файла TOML `$XDG_CONFIG_HO
 - **THEN** Заметка и Агент используют настройки Встречи по умолчанию, прежняя папка не используется
 
 #### Scenario: Прежние настройки Claude Code
-- **GIVEN** указаны `[programs] claude`, `[meeting] model = "opus"` и папка Встреч
+- **GIVEN** указаны `[programs] claude`, модель Встречи `opus`, effort `medium` и прежняя папка Встреч
 - **WHEN** служба читает настройки
-- **THEN** используется программа Codex и модель `gpt-6.2-astra`, путь из `[meeting] folder` не используется для Wisp, допустимый effort сохраняется
+- **THEN** используется программа Codex, модель `gpt-6.2-astra` и effort `high`. Для новых Заметок берётся корень `wisp`
 
 #### Scenario: Пользовательская папка Скиллов
 - **WHEN** указан путь `[agent] skills_dir`

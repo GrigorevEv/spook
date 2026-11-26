@@ -28,7 +28,7 @@
       {% for kind in kinds %}
       <section aria-labelledby="{{ kind.value }}-title">
         <h2 id="{{ kind.value }}-title">{{ kind.label }}</h2>
-        {{ text_field(kind.value ~ ".folder", "Папка Заметок") }}
+        {{ text_field("wisp", "Папка Wisp") }}
         {{ text_field(kind.value ~ ".skill", "Скилл") }}
         <p class="hint">Codex получает Скилл, Транскрипт, Словарь терминов и названия заметок для ссылок.</p>
         {{ text_field(kind.value ~ ".model", "Модель Агента", list="models") }}

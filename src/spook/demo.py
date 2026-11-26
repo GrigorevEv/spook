@@ -12,9 +12,10 @@ import numpy as np
 
 from spook.audio import SAMPLE_RATE, AudioSegment, Source
 from spook.clock import SystemClock
+from spook.demo_wisp import demo_wisp
 from spook.fakes import FakeAudioInput, LoudnessSpeechDetector
 from spook.serve import HOST, make_server
-from spook.settings import AgentSettings, KindSettings, ProgramSettings, RecognitionSettings, Settings
+from spook.settings import AgentSettings, ProgramSettings, RecognitionSettings, Settings
 from spook.web import create_app
 
 SCRIPT = (
@@ -24,7 +25,7 @@ SCRIPT = (
     "Речь режется по паузам на Реплики, каждая Реплика распознаётся целиком.",
     "Звук живёт только в памяти: ни файлов, ни временных файлов на диске.",
     "Соседние Реплики складываются в абзацы с временем по часам и говорящим.",
-    "Заметка появляется в Хранилище при «Старт» и дописывается по ходу Сессии.",
+    "Во время Встречи Spook дописывает Транскрипт. После «Стоп» он появится в разделе «Встречи» Wisp.",
     "Сессия живёт в службе, а не во вкладке: вкладку можно закрыть и открыть заново.",
     "После «Стоп» очередь дорабатывается, а Агент пишет Выжимку наверху Заметки.",
     "В облако уходит только текст Транскрипта — и только Агенту.",
@@ -79,9 +80,8 @@ def demo_settings(folder: Path, port: int) -> Settings:
     skill.write_text("Выжимка Встречи для показа на подменах.", encoding="utf-8")
     return Settings(
         port=port,
-        wiki=folder / "wiki",
+        wisp=demo_wisp(folder / "wisp"),
         terms_dictionary=folder / "Словарь терминов.md",
-        meeting=KindSettings(folder / "работа", "spook-meeting"),
         agent=AgentSettings(skills_dir=skills_dir),
         recognition=RecognitionSettings(max_utterance_seconds=UTTERANCE_SECONDS),
         programs=demo_programs(folder),

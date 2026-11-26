@@ -42,8 +42,7 @@ def codex_model_and_effort(model: str, effort: str) -> tuple[str, str]:
 
 @dataclass(frozen=True)
 class KindSettings:
-    folder: Path
-    skill: str
+    skill: str = "spook-meeting"
     model: str = DEFAULT_AGENT_MODEL
     effort: str = "high"
 
@@ -95,10 +94,8 @@ class Settings:
     port: int = 8765
     auto_stop_minutes: float = 5
     terms_dictionary: Path = field(default_factory=lambda: _home("~/Documents/notes/работа/Словарь терминов.md"))
-    wiki: Path = field(default_factory=lambda: _home("~/learn/wiki"))
-    meeting: KindSettings = field(
-        default_factory=lambda: KindSettings(_home("~/Documents/notes/работа"), "spook-meeting")
-    )
+    wisp: Path = field(default_factory=lambda: _home("~/code/personal/wisp"))
+    meeting: KindSettings = field(default_factory=KindSettings)
     sources: SourceSettings = field(default_factory=SourceSettings)
     recognition: RecognitionSettings = field(default_factory=RecognitionSettings)
     programs: ProgramSettings = field(default_factory=ProgramSettings)
@@ -108,7 +105,7 @@ class Settings:
         return self.meeting
 
     def kind_folders(self) -> list[tuple[SessionKind, Path]]:
-        return [(kind, self.for_kind(kind).folder) for kind in SessionKind]
+        return [(SessionKind.MEETING, self.wisp / "html")]
 
 
 def config_dir() -> Path:
@@ -141,7 +138,7 @@ def load_settings(path: Path | None = None) -> Settings:
         port=int(raw.get("port", defaults.port)),
         auto_stop_minutes=float(raw.get("auto_stop_minutes", defaults.auto_stop_minutes)),
         terms_dictionary=_path_or(raw.get("terms_dictionary"), defaults.terms_dictionary),
-        wiki=_path_or(raw.get("wiki"), defaults.wiki),
+        wisp=_path_or(raw.get("wisp"), defaults.wisp),
         meeting=_kind(raw.get("meeting", {}), defaults.meeting),
         sources=_merge(defaults.sources, raw.get("sources", {})),
         recognition=_recognition(raw.get("recognition", {}), defaults.recognition),
@@ -157,7 +154,7 @@ def _path_or(value: Any, default: Path) -> Path:
 def _kind(raw: dict[str, Any], defaults: KindSettings) -> KindSettings:
     merged = _merge(defaults, raw)
     model, effort = codex_model_and_effort(merged.model, merged.effort)
-    return replace(merged, folder=_path_or(raw.get("folder"), defaults.folder), model=model, effort=effort)
+    return replace(merged, model=model, effort=effort)
 
 
 def _agent(raw: dict[str, Any], defaults: AgentSettings) -> AgentSettings:
@@ -180,9 +177,10 @@ def _merge(defaults: Any, raw: dict[str, Any]) -> Any:
 
 
 SCREEN_FIELDS = (
-    *(f"{kind.value}.{key}" for kind in SessionKind for key in ("folder", "skill", "model", "effort")),
+    *(f"{kind.value}.{key}" for kind in SessionKind for key in ("skill", "model", "effort")),
     *(f"sources.{source.value}" for source in Source),
     "auto_stop_minutes",
+    "wisp",
     "terms_dictionary",
 )
 
@@ -201,13 +199,13 @@ def screen_values(settings: Settings) -> dict[str, str]:
     values: dict[str, str] = {}
     for kind in SessionKind:
         kind_settings = settings.for_kind(kind)
-        values[f"{kind.value}.folder"] = str(kind_settings.folder)
         values[f"{kind.value}.skill"] = kind_settings.skill
         values[f"{kind.value}.model"] = kind_settings.model
         values[f"{kind.value}.effort"] = kind_settings.effort
     for source in Source:
         values[f"sources.{source.value}"] = settings.sources.for_source(source)
     values["auto_stop_minutes"] = f"{settings.auto_stop_minutes:g}"
+    values["wisp"] = str(settings.wisp)
     values["terms_dictionary"] = str(settings.terms_dictionary)
     return values
 
@@ -246,7 +244,6 @@ def _check_screen(form: Mapping[str, str]) -> tuple[dict[str, Any], dict[str, st
     for kind in SessionKind:
         prefix = kind.value
         for key, reason in (
-            (f"{prefix}.folder", _path_problem(value[f"{prefix}.folder"], f"папку Заметок вида «{kind.label}»")),
             (f"{prefix}.skill", _word_problem(value[f"{prefix}.skill"], "Скилл")),
             (f"{prefix}.model", _word_problem(value[f"{prefix}.model"], "модель")),
         ):
@@ -265,6 +262,8 @@ def _check_screen(form: Mapping[str, str]) -> tuple[dict[str, Any], dict[str, st
         minutes = math.nan
     if not (math.isfinite(minutes) and minutes > 0):
         errors["auto_stop_minutes"] = f"Время автостопа — число минут больше нуля, а не «{minutes_text}»"
+    if problem := _path_problem(value["wisp"], "папку Wisp"):
+        errors["wisp"] = problem
     reason = _path_problem(value["terms_dictionary"], "путь к Словарю терминов")
     if reason:
         errors["terms_dictionary"] = reason

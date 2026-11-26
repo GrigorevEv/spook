@@ -4,6 +4,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TextIO
 
 SCHEMA = Path(__file__).with_name("summary.schema.json")
 INSTRUCTIONS = (
@@ -72,32 +73,51 @@ def read_reply(output: Path) -> Reply:
     return Reply(value["summary"].strip(), value["topic"].strip())
 
 
-def failure(stdout: str, stderr: str, returncode: int) -> str:
+EVENT_NAMES = {
+    "thread.started", "turn.started", "turn.completed", "turn.failed",
+    "item.started", "item.updated", "item.completed", "error",
+}
+
+
+def record_output(stdout: TextIO, stderr: TextIO, returncode: int, journal: TextIO) -> str:
     failed = False
-    messages = []
-    for line in stdout.splitlines():
+    reason = ""
+    for line in stdout:
         try:
             event = json.loads(line)
         except ValueError:
             continue
         if not isinstance(event, dict):
             continue
-        if event.get("type") == "turn.failed":
+        name = event.get("type")
+        if not isinstance(name, str) or name not in EVENT_NAMES:
+            continue
+        journal.write(name + "\n")
+        if name == "turn.failed":
             failed = True
             detail = event.get("error")
-        elif event.get("type") == "error":
+        elif name == "error":
             detail = event
         else:
             continue
         if isinstance(detail, dict) and isinstance(detail.get("message"), str):
-            messages.append(detail["message"])
+            reason = _known_failure(detail["message"]) or reason
     if returncode == 0 and not failed:
         return ""
-    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
-    message = (messages or lines or [f"Codex завершился с кодом {returncode}"])[-1]
+    for line in stderr:
+        if not reason:
+            reason = _known_failure(line)
+    return reason or (f"Codex завершился с кодом {returncode}" if returncode else "Codex сообщил об ошибке")
+
+
+def _known_failure(message: str) -> str:
     reason = message.lower()
     if any(word in reason for word in ("usage limit", "usage_limit", "rate_limit", "rate limit", "quota", "429")):
         return "Исчерпан лимит подписки"
     if any(word in reason for word in ("connection", "network", "error sending request", "dns error", "stream disconnected")):
         return "Нет сети"
-    return message.splitlines()[0][:1000]
+    if any(word in reason for word in ("unauthorized", "authentication", "not logged in", "401")):
+        return "Требуется вход в Codex"
+    if "model" in reason and any(word in reason for word in ("unsupported", "not supported", "not found", "does not exist")):
+        return "Выбранная модель Codex недоступна"
+    return ""
