@@ -18,8 +18,10 @@ def test_demo_plays_scripted_meeting_with_text_appearing_by_itself(demo):
         stop = demo.http.post(f"{demo.base_url}/session/stop")
         assert stop.status_code == 200, stop.text
         events.wait_for("state", containing="нет Сессии")
-        events.wait_for("agent", containing="готово")
-        note_path = Path(re.search(r"<code>(.+?)</code>", state.data).group(1))
+        agent = events.wait_for("agent", containing="готово")
+        initial_path = Path(re.search(r"<code>(.+?)</code>", state.data).group(1))
+        [note_path] = list(initial_path.parent.glob("*.md"))
+        assert "Показ Spook" in agent.data and note_path.stem.endswith(" Показ Spook")
         note = note_path.read_text(encoding="utf-8")
 
     assert state.name == "state" and "идёт" in state.data

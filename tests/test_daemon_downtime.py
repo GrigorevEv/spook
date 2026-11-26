@@ -105,7 +105,9 @@ def test_long_downtime_finishes_meeting_at_last_activity_renames_and_queues_agen
         ["Сессия завершена", "Перерыв в работе Spook 14:05–15:05 — без речи дольше 5 минут"],
         ["Выжимка готова", "2026-11-06 14-02 Планёрка"],
     ]
-    assert [call["argv"][1] for call in spook.agent.calls()] == [f"/spook-meeting {note}"]
+    [call] = spook.agent.calls()
+    assert call["input"]["topic"] == "Планёрка"
+    assert call["input"]["transcript"].strip() == "**14:02 Собеседники:** Обсудили план."
     assert note.read_text(encoding="utf-8") == (
         "---\n"
         "date: 2026-11-06\n"

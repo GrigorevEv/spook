@@ -8,7 +8,7 @@ import pytest
 
 from spook.audio import Device, Source
 
-from conftest import speech
+from conftest import agent_model_and_effort, speech
 
 MEETING_NOTE_NAME = "2026-11-06 14-02 Встреча"
 
@@ -56,16 +56,16 @@ def settings_form(spook) -> Form:
 def test_settings_screen_shows_current_values_from_settings_file(spook):
     spook.write_settings(
         auto_stop_minutes=1.5,
-        meeting={"skill": "my-meeting", "model": "sonnet", "effort": "max"},
+        meeting={"skill": "my-meeting", "model": "gpt-6.2-sol", "effort": "max"},
     )
 
     form = settings_form(spook)
 
     assert form.values["meeting.folder"] == str(spook.meetings_dir)
     assert form.values["meeting.skill"] == "my-meeting"
-    assert form.values["meeting.model"] == "sonnet"
+    assert form.values["meeting.model"] == "gpt-6.2-sol"
     assert form.values["meeting.effort"] == "max"
-    assert [value for value, _ in form.options["meeting.effort"]] == ["low", "medium", "high", "xhigh", "max"]
+    assert [value for value, _ in form.options["meeting.effort"]] == ["low", "medium", "high", "xhigh", "max", "ultra"]
     assert not any(key.startswith("lecture.") for key in form.values)
     assert form.values["auto_stop_minutes"] == "1.5"
     assert form.values["terms_dictionary"] == str(spook.settings.terms_dictionary)
@@ -86,12 +86,6 @@ def test_every_screen_links_to_settings(spook):
     assert '<span aria-current="page">Настройки</span>' in spook.http.get(f"{spook.base_url}/settings").text
 
 
-def test_settings_screen_reminds_that_skill_permissions_live_in_skill_headers(spook):
-    html = spook.http.get(f"{spook.base_url}/settings").text
-
-    assert html.count("в шапке Скилла") == 1
-
-
 def test_saving_writes_settings_file_and_keeps_keys_that_are_not_on_screen(spook, tmp_path):
     spook.write_settings(recognition={"speech_threshold": 0.4})
     with spook.settings_path.open("a", encoding="utf-8") as file:
@@ -103,7 +97,7 @@ def test_saving_writes_settings_file_and_keeps_keys_that_are_not_on_screen(spook
         spook,
         meeting__folder=str(new_meetings),
         meeting__skill="my-meeting",
-        meeting__model="sonnet",
+        meeting__model="gpt-6.2-sol",
         meeting__effort="xhigh",
         auto_stop_minutes="2,5",
         terms_dictionary=str(new_terms),
@@ -112,7 +106,7 @@ def test_saving_writes_settings_file_and_keeps_keys_that_are_not_on_screen(spook
     assert response.status_code == 200 and response.url.path == "/settings"
     assert "Настройки сохранены" in response.text
     saved = tomllib.loads(spook.settings_path.read_text(encoding="utf-8"))
-    assert saved["meeting"] == {"folder": str(new_meetings), "skill": "my-meeting", "model": "sonnet", "effort": "xhigh"}
+    assert saved["meeting"] == {"folder": str(new_meetings), "skill": "my-meeting", "model": "gpt-6.2-sol", "effort": "xhigh"}
     assert saved["auto_stop_minutes"] == 2.5
     assert saved["terms_dictionary"] == str(new_terms)
     assert saved["port"] == spook.settings.port
@@ -182,33 +176,29 @@ def meeting_until_auto_stop(spook, minutes: float) -> None:
         events.wait_for("agent", containing="готово")
 
 
-def agent_launches(spook) -> list[tuple[list[str], str]]:
-    return [(call["argv"][:6], call["cwd"]) for call in spook.agent.calls()]
-
-
 def test_saved_folder_model_and_auto_stop_act_on_next_session_and_agent_without_restart(spook, tmp_path):
     spook.agent.play("summary")
     new_folder = tmp_path / "Новые встречи"
 
-    save(spook, meeting__folder=str(new_folder), meeting__model="haiku", meeting__effort="max", auto_stop_minutes="2")
+    save(spook, meeting__folder=str(new_folder), meeting__model="gpt-6.2-sol", meeting__effort="max", auto_stop_minutes="2")
     meeting_until_auto_stop(spook, 2)
 
     note = new_folder / f"{MEETING_NOTE_NAME}.md"
     assert note.is_file()
     assert not (spook.meetings_dir / f"{MEETING_NOTE_NAME}.md").exists()
-    assert agent_launches(spook) == [
-        (["-p", f"/spook-meeting {note}", "--model", "haiku", "--effort", "max"], str(new_folder)),
-    ]
+    [call] = spook.agent.calls()
+    assert agent_model_and_effort(call) == ("gpt-6.2-sol", "max")
+    assert "Реплика." in call["input"]["transcript"]
 
 
-def test_saving_during_session_acts_from_next_session_and_agent_works_in_folder_of_its_note(spook, tmp_path):
+def test_saving_during_session_acts_from_next_session_and_agent_updates_original_note(spook, tmp_path):
     spook.agent.play("summary")
     new_folder = tmp_path / "Новые встречи"
     spook.recognizer.say("Реплика.")
     with spook.events() as events:
         spook.start_meeting()
 
-        response = save(spook, meeting__folder=str(new_folder), meeting__model="haiku", auto_stop_minutes="10")
+        response = save(spook, meeting__folder=str(new_folder), meeting__model="gpt-6.2-sol", auto_stop_minutes="10")
 
         assert response.status_code == 200
         spook.feed_system(speech(20))
@@ -219,9 +209,9 @@ def test_saving_during_session_acts_from_next_session_and_agent_works_in_folder_
 
     note = spook.meetings_dir / f"{MEETING_NOTE_NAME}.md"
     assert note.is_file()
-    assert agent_launches(spook) == [
-        (["-p", f"/spook-meeting {note}", "--model", "haiku", "--effort", "high"], str(spook.meetings_dir)),
-    ]
+    [call] = spook.agent.calls()
+    assert agent_model_and_effort(call) == ("gpt-6.2-sol", "high")
+    assert "## Суть" in note.read_text(encoding="utf-8")
 
     spook.clock.advance(60 * 60)
     spook.agent.play("summary")
@@ -252,7 +242,7 @@ def test_agent_names_topic_of_note_left_in_folder_changed_during_session(spook, 
         ("auto_stop_minutes", "пять", "Время автостопа — число минут больше нуля, а не «пять»"),
         ("auto_stop_minutes", "0", "Время автостопа — число минут больше нуля, а не «0»"),
         ("auto_stop_minutes", "-1", "Время автостопа — число минут больше нуля, а не «-1»"),
-        ("meeting.effort", "turbo", "Неизвестный effort «turbo»: допустимы low, medium, high, xhigh, max"),
+        ("meeting.effort", "turbo", "Неизвестный effort «turbo»: допустимы low, medium, high, xhigh, max, ultra"),
         ("meeting.model", "", "Укажите модель"),
         ("terms_dictionary", "", "Укажите путь к Словарю терминов"),
     ],

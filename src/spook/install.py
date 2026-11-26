@@ -59,6 +59,7 @@ def run_command(command: list[str]) -> None:
 def install(repo: Path, home: Path, port: int, run: Runner = run_command) -> None:
     run(["uv", "tool", "install", "--reinstall", str(repo)])
     run([str(_spook(home)), "prepare"])
+    _unlink_repo_skills(home / ".claude" / "skills", repo)
     _link_skills(repo, home)
 
     applications = _applications(home)
@@ -82,11 +83,8 @@ def uninstall(repo: Path, home: Path, run: Runner = run_command) -> None:
     if desktop.exists():
         desktop.unlink()
         run(["update-desktop-database", str(_applications(home))])
-    skills = (repo / "skills").resolve()
-    for link in _user_skills(home).glob("*"):
-        if link.is_symlink() and link.resolve().parent == skills:
-            link.unlink()
-            print(f"Скилл {link.name} отключён")
+    _unlink_repo_skills(_user_skills(home), repo)
+    _unlink_repo_skills(home / ".claude" / "skills", repo)
     run(["uv", "tool", "uninstall", TOOL])
     print("Spook удалён; настройки, модели и журналы остались на месте.")
 
@@ -97,6 +95,13 @@ def find_repo(start: Path) -> Path | None:
         if project.is_file() and 'name = "spook"' in project.read_text(encoding="utf-8"):
             return folder
     return None
+
+
+def _unlink_repo_skills(folder: Path, repo: Path) -> None:
+    for link in folder.glob("*"):
+        if link.is_symlink() and link.resolve().parent == (repo / "skills").resolve():
+            link.unlink()
+            print(f"Скилл {link.name} отключён")
 
 
 def _link_skills(repo: Path, home: Path) -> None:
@@ -140,4 +145,4 @@ def _applications(home: Path) -> Path:
 
 
 def _user_skills(home: Path) -> Path:
-    return home / ".claude" / "skills"
+    return home / ".agents" / "skills"

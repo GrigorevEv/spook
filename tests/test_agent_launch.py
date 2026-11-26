@@ -1,16 +1,14 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
-import pytest
-
-from conftest import SseEvent, speech
+from conftest import agent_model_and_effort, speech
 
 NOTE_NAME = "2026-11-06 14-02 Встреча"
-SAMPLES_DIR = Path(__file__).parent / "data" / "claude"
 
 
-def run_agent(spook, scenario: str, until: str) -> SseEvent:
+def run_agent(spook, scenario: str = "summary", until: str = "готово"):
     spook.agent.play(scenario)
     spook.recognizer.say("Реплика.")
     spook.start_meeting()
@@ -25,155 +23,83 @@ def journal(spook) -> str:
     return (spook.state_dir / "agent" / "meeting" / f"{NOTE_NAME}.log").read_text(encoding="utf-8")
 
 
-def test_meeting_agent_works_in_meetings_folder(spook):
-    run_agent(spook, "summary", until="готово")
-
-    assert [call["cwd"] for call in spook.agent.calls()] == [str(spook.meetings_dir)]
-
-
-@pytest.mark.parametrize("custom_cwd", [False, True], ids=["meetings-folder", "other-folder"])
-def test_agent_is_denied_editing_claude_settings_and_wiki_tools(spook, tmp_path, custom_cwd):
-    folders = [spook.meetings_dir, spook.wiki_dir]
-    if custom_cwd:
-        cwd = tmp_path / "agent"
-        cwd.mkdir()
-        spook.write_settings(meeting={"agent_cwd": str(cwd)})
-        folders.insert(0, cwd)
-
-    run_agent(spook, "summary", until="готово")
+def test_codex_receives_data_through_stdin_and_runs_in_a_temporary_folder(spook):
+    run_agent(spook)
 
     [call] = spook.agent.calls()
-    flag = call["argv"].index("--disallowedTools")
-    rules = [
-        *(f"Edit(/{folder}/**/.claude/**)" for folder in folders),
-        f"Edit(/{spook.wiki_dir}/_tools/**)",
-        f"Edit(/{spook.wiki_dir}/_templates/**)",
-    ]
-    assert call["argv"][flag + 1 : flag + 1 + len(rules)] == rules
-    assert call["argv"][flag + 1 + len(rules)] == "--append-system-prompt-file"
+    args = call["argv"]
+    assert "exec" in args and args[-1] == "-"
+    assert "--json" in args and "--ephemeral" in args and "--no-daemon" in args
+    assert agent_model_and_effort(call) == ("gpt-6.2-astra", "high")
+    assert set(call["input"]) == {"skill", "date", "topic", "transcript", "terms_dictionary", "vault_notes", "wiki_notes"}
+    schema = call["schema"]
+    assert schema["type"] == "object" and schema["additionalProperties"] is False
+    assert set(schema["required"]) == {"summary", "topic"}
+    assert schema["properties"] == {"summary": {"type": "string"}, "topic": {"type": "string"}}
+    assert call["input"]["transcript"].strip() == "**14:02 Собеседники:** Реплика."
+    assert "Реплика." not in " ".join(args)
+    assert str(spook.meetings_dir) not in " ".join(args)
+    cwd = Path(call["cwd"])
+    assert not cwd.is_relative_to(spook.meetings_dir.parent)
+    assert not cwd.exists()
 
 
-def test_run_blocked_by_hook_gives_error_asking_to_check_vpn_and_journal_keeps_output_as_is(spook):
-    agent = run_agent(spook, "replay hook-blocked 0", until="ошибка")
+def test_codex_uses_isolated_permissions_and_cached_search(spook):
+    run_agent(spook)
 
-    assert "Запуск заблокирован хуком (проверьте VPN)" in agent.data
-    assert "Запуск заблокирован хуком (проверьте VPN)" in spook.page().text
-    assert (SAMPLES_DIR / "hook-blocked.jsonl").read_text(encoding="utf-8") in journal(spook)
-
-
-def test_run_without_network_gives_error_no_network(spook):
-    agent = run_agent(spook, "replay no-network 1", until="ошибка")
-
-    assert "Нет сети" in agent.data
-    assert "Код возврата: 1. Выжимка: ошибка — Нет сети" in journal(spook)
-
-
-def test_run_that_hit_subscription_limit_gives_error_limit_exhausted(spook):
-    agent = run_agent(spook, "replay rate-limit 1", until="ошибка")
-
-    assert "Исчерпан лимит подписки" in agent.data
-    assert "Исчерпан лимит подписки" in spook.page().text
+    [call] = spook.agent.calls()
+    args = call["argv"]
+    assert {"--ignore-user-config", "--ignore-rules"} <= set(args)
+    settings = {args[i + 1] for i, arg in enumerate(args) if arg == "-c"}
+    assert {
+        'approval_policy="never"', 'permissions.spook.filesystem={":root"="none"}',
+        "permissions.spook.network.enabled=false", 'web_search="cached"', "mcp_servers={}",
+        'shell_environment_policy.inherit="none"',
+    } <= settings
+    disabled = {args[i + 1] for i, arg in enumerate(args) if arg == "--disable"}
+    assert {"apps", "plugins", "hooks", "shell_tool", "unified_exec", "browser_use", "computer_use", "multi_agent"} <= disabled
 
 
-def test_successful_run_with_permission_denials_is_done_with_warning_naming_denied_tools(spook):
-    agent = run_agent(spook, "replay success-with-denials 0 summary", until="готово")
+def test_selected_skill_is_sent_in_stdin_and_model_and_effort_come_from_settings(spook):
+    skill = spook.skills_dir / "my-meeting" / "SKILL.md"
+    skill.parent.mkdir()
+    text = "---\nname: my-meeting\ndescription: Выжимка.\n---\n\nСобери задачи и сроки Встречи."
+    skill.write_text(text, encoding="utf-8")
+    spook.write_settings(meeting={"skill": "my-meeting", "model": "gpt-6.2-sol", "effort": "medium"})
 
-    denials = (
-        "Отказ в правах: Read /home/ev/.cache/tran-probe/notes/outside.md;"
-        " Bash cat /home/ev/.cache/tran-probe/notes/outside.md"
-    )
-    assert denials in agent.data
-    assert denials in spook.page().text
-    assert denials in journal(spook)
+    run_agent(spook)
 
-
-def test_run_with_permission_denials_and_no_summary_gives_error_with_denials_as_reason(spook):
-    agent = run_agent(spook, "replay success-with-denials 0", until="ошибка")
-
-    assert "ошибка" in agent.data
-    assert "Отказ в правах: Read /home/ev/.cache/tran-probe/notes/outside.md" in agent.data
-    assert "Выжимки в Заметке нет" not in agent.data
+    [call] = spook.agent.calls()
+    assert call["input"]["skill"] == text
+    assert agent_model_and_effort(call) == ("gpt-6.2-sol", "medium")
 
 
-def test_unrecognized_api_error_is_shown_with_message_of_the_run(spook):
-    agent = run_agent(spook, "replay api-error 1", until="ошибка")
+def test_missing_skill_keeps_note_and_reports_error_before_starting_codex(spook):
+    spook.write_settings(meeting={"skill": "absent"})
 
-    assert "API Error: 500 Internal server error" in agent.data
+    result = run_agent(spook, until="ошибка")
+
+    assert "Не удалось прочитать Скилл absent" in result.data
+    assert spook.agent.calls() == []
+    note = spook.meetings_dir / f"{NOTE_NAME}.md"
+    assert "## Суть" not in note.read_text(encoding="utf-8")
+    assert note.read_text(encoding="utf-8").endswith("**14:02 Собеседники:** Реплика.\n")
 
 
-def test_run_that_failed_before_output_shows_its_stderr(spook):
-    agent = run_agent(spook, "replay bad-flags 1", until="ошибка")
+def test_journal_keeps_codex_events_and_stderr(spook):
+    run_agent(spook, "fail", until="ошибка")
 
-    assert "Error: When using --print, --output-format=stream-json requires --verbose" in agent.data
-
-
-def test_run_longer_than_timeout_is_stopped_and_gives_error_time_exceeded(spook):
-    spook.write_settings(agent={"timeout_minutes": 0.02})
-
-    agent = run_agent(spook, "hang", until="ошибка")
-
-    assert "Превышено время" in agent.data
-    assert "Превышено время" in journal(spook)
+    text = journal(spook)
+    events = [json.loads(line) for line in text.splitlines() if line.startswith("{")]
+    assert [event["type"] for event in events][:2] == ["thread.started", "turn.started"]
+    assert "--- stderr ---\nСценарий: Агент упал." in text
+    assert text.endswith("Код возврата: 1. Выжимка: ошибка — Сценарий: Агент упал.\n")
 
 
 def test_launch_can_be_wrapped_by_command_from_settings_with_timeout_in_seconds(spook):
     spook.write_settings(agent={"timeout_minutes": 2, "wrapper": "env SPOOK_UNIT_LIMIT={timeout}"})
 
-    run_agent(spook, "summary", until="готово")
+    run_agent(spook)
 
-    assert journal(spook).startswith(f"$ env SPOOK_UNIT_LIMIT=120 {spook.agent.path} -p ")
+    assert journal(spook).startswith(f"$ env SPOOK_UNIT_LIMIT=120 {spook.agent.path} ")
     assert len(spook.agent.calls()) == 1
-
-
-SKILL_WITH_MODEL = (
-    "---\n"
-    "name: spook-meeting\n"
-    "description: Выжимка Встречи.\n"
-    "model: sonnet\n"
-    "effort: high\n"
-    "allowed-tools:\n"
-    "  - Read\n"
-    "---\n"
-    "\n"
-    "Заметка: $ARGUMENTS\n"
-)
-
-MODEL_IN_SKILL_WARNING = (
-    "В шапке Скилла spook-meeting указаны model, effort — они перебивают модель и effort из настроек Spook."
-)
-
-
-def test_model_and_effort_in_project_skill_header_give_warning_on_page_and_in_journal(spook):
-    skill = spook.meetings_dir / ".claude" / "skills" / "spook-meeting" / "SKILL.md"
-    skill.parent.mkdir(parents=True)
-    skill.write_text(SKILL_WITH_MODEL, encoding="utf-8")
-
-    agent = run_agent(spook, "summary", until="готово")
-
-    assert MODEL_IN_SKILL_WARNING in agent.data
-    assert MODEL_IN_SKILL_WARNING in spook.page().text
-    assert MODEL_IN_SKILL_WARNING in journal(spook)
-
-
-def test_model_in_user_skill_header_gives_warning(spook):
-    skill = spook.claude_config_dir / "skills" / "spook-meeting" / "SKILL.md"
-    skill.parent.mkdir(parents=True)
-    skill.write_text(SKILL_WITH_MODEL.replace("effort: high\n", ""), encoding="utf-8")
-
-    agent = run_agent(spook, "summary", until="готово")
-
-    assert "В шапке Скилла spook-meeting указаны model — они перебивают" in agent.data
-
-
-def test_model_mentioned_only_in_skill_text_below_header_gives_no_warning(spook):
-    skill = spook.meetings_dir / ".claude" / "skills" / "spook-meeting" / "SKILL.md"
-    skill.parent.mkdir(parents=True)
-    skill.write_text(
-        SKILL_WITH_MODEL.replace("model: sonnet\n", "").replace("effort: high\n", "")
-        + "\nmodel: так в тексте Скилла можно писать.\n",
-        encoding="utf-8",
-    )
-
-    agent = run_agent(spook, "summary", until="готово")
-
-    assert "В шапке Скилла" not in agent.data

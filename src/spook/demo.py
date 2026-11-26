@@ -14,7 +14,7 @@ from spook.audio import SAMPLE_RATE, AudioSegment, Source
 from spook.clock import SystemClock
 from spook.fakes import FakeAudioInput, LoudnessSpeechDetector
 from spook.serve import HOST, make_server
-from spook.settings import KindSettings, ProgramSettings, RecognitionSettings, Settings
+from spook.settings import AgentSettings, KindSettings, ProgramSettings, RecognitionSettings, Settings
 from spook.web import create_app
 
 SCRIPT = (
@@ -35,16 +35,17 @@ CHUNK_SECONDS = 0.5
 AGENT_SECONDS = 3.0
 
 AGENT_STUB = f'''\
-"""Заглушка Claude Code для показа: выждать и дописать Выжимку над «## Транскрипт»."""
+import json
 import sys
 import time
 from pathlib import Path
 
 time.sleep({AGENT_SECONDS})
-prompt = sys.argv[sys.argv.index("-p") + 1]
-note = Path(prompt.split(" ", 1)[1])
-summary = "## Суть\\n\\nSpook захватывает Встречу.\\n\\n## Решения\\n\\nНет.\\n\\n## Задачи\\n\\nНет.\\n\\n## Открытые вопросы\\n\\nНет.\\n\\n"
-note.write_text(note.read_text(encoding="utf-8").replace("## Транскрипт", summary + "## Транскрипт", 1), encoding="utf-8")
+meeting = json.load(sys.stdin)
+output = Path(sys.argv[sys.argv.index("--output-last-message") + 1])
+summary = "## Суть\\n\\nSpook превращает речь Встречи в Заметку."
+summary += "\\n\\n## Решения\\n\\nНет.\\n\\n## Задачи\\n\\nНет.\\n\\n## Открытые вопросы\\n\\nНет."
+output.write_text(json.dumps({{"summary": summary, "topic": "" if meeting["topic"] else "Показ Spook"}}, ensure_ascii=False), encoding="utf-8")
 print("Заглушка Агента показа: Выжимка написана.")
 '''
 
@@ -63,20 +64,25 @@ class CyclingRecognizer:
 
 
 def demo_programs(folder: Path) -> ProgramSettings:
-    script = folder / "claude-stub.py"
+    script = folder / "codex-stub.py"
     script.write_text(AGENT_STUB, encoding="utf-8")
-    launcher = folder / "claude"
+    launcher = folder / "codex"
     launcher.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{script}" "$@"\n', encoding="utf-8")
     launcher.chmod(0o755)
-    return ProgramSettings(claude=str(launcher), notify="true")
+    return ProgramSettings(codex=str(launcher), notify="true")
 
 
 def demo_settings(folder: Path, port: int) -> Settings:
+    skills_dir = folder / "skills"
+    skill = skills_dir / "spook-meeting" / "SKILL.md"
+    skill.parent.mkdir(parents=True, exist_ok=True)
+    skill.write_text("Выжимка Встречи для показа на подменах.", encoding="utf-8")
     return Settings(
         port=port,
         wiki=folder / "wiki",
         terms_dictionary=folder / "Словарь терминов.md",
         meeting=KindSettings(folder / "работа", "spook-meeting"),
+        agent=AgentSettings(skills_dir=skills_dir),
         recognition=RecognitionSettings(max_utterance_seconds=UTTERANCE_SECONDS),
         programs=demo_programs(folder),
     )

@@ -78,4 +78,4 @@ def test_install_command_calls_installation_steps_in_order(tmp_path):
         [str(programs / "systemctl"), "--user", "try-restart", "spook.service"],
         [str(programs / "systemctl"), "--user", "enable", "--now", "spook.service"],
     ]
-    assert (home / ".claude/skills/spook-probe").resolve() == (installation.repo / "skills/spook-probe").resolve()
+    assert (home / ".agents/skills/spook-probe").resolve() == (installation.repo / "skills/spook-probe").resolve()

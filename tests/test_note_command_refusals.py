@@ -14,7 +14,7 @@ def reasons_of_all_commands(spook, note: Path | str) -> list[str]:
     for command in COMMANDS:
         response = spook.http.post(
             f"{spook.base_url}/notes/{command}",
-            data={"note": str(note), "model": "opus", "effort": "high", "confirm": "yes"},
+            data={"note": str(note), "model": "gpt-6.2-astra", "effort": "high", "confirm": "yes"},
         )
         assert response.status_code == 409, (command, note, response.text)
         reasons.append(unescape(re.fullmatch(r'<span class="error">(.*)</span>', response.text, flags=re.S).group(1)))

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from urllib.parse import quote
 
+from spook.note import Note
 from spook.settings import Settings
 
 TERMS_DICTIONARY_TEMPLATE = """\
@@ -33,39 +35,28 @@ def note_paths(root: Path) -> list[Path]:
     return sorted(path for path in found if not any(part.startswith(".") for part in path.parts))
 
 
-def meeting_context(settings: Settings, note_path: Path) -> str:
+def meeting_input(settings: Settings, note: Note, skill: str) -> str:
+    if not skill or Path(skill).name != skill or skill in {".", ".."}:
+        raise ValueError("Недопустимое имя Скилла")
+    skill_path = settings.agent.skills_dir / skill / "SKILL.md"
+    try:
+        instructions = skill_path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise ValueError(f"Не удалось прочитать Скилл {skill}. Проверьте {skill_path} или выполните spook install.") from error
+    ensure_terms_dictionary(settings.terms_dictionary)
     vault = settings.meeting.folder.parent
     wiki = settings.wiki
-    vault_names = sorted({path.stem for path in note_paths(vault)} - {note_path.stem})
-    wiki_links = [_cross_vault_link(wiki.name, path) for path in note_paths(wiki)]
-    lines = [
-        "# Сведения от Spook",
-        "",
-        f"Словарь терминов: {settings.terms_dictionary}",
-        "",
-        f"## Заметки рабочего Хранилища ({vault})",
-        "",
-        "Только названия, содержимого здесь нет. Ссылка — `[[Название]]`.",
-        "",
-        *(f"- {name}" for name in vault_names),
-        "",
-        f"## Заметки Вики ({wiki})",
-        "",
-        "Ссылка — готовая, как в списке; путь к файлу заметки — в скобках после ссылки.",
-        "",
-        *wiki_links,
-        "",
-    ]
-    return "\n".join(lines)
-
-
-def write_meeting_context(settings: Settings, note_path: Path, target: Path) -> Path:
-    ensure_terms_dictionary(settings.terms_dictionary)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(meeting_context(settings, note_path), encoding="utf-8")
-    return target
+    return json.dumps({
+        "skill": instructions,
+        "date": note.date,
+        "topic": note.topic,
+        "terms_dictionary": settings.terms_dictionary.read_text(encoding="utf-8"),
+        "vault_notes": sorted({path.stem for path in note_paths(vault)} - {note.path.stem}),
+        "wiki_notes": [_cross_vault_link(wiki.name, path) for path in note_paths(wiki)],
+        "transcript": note.transcript_markdown(),
+    }, ensure_ascii=False)
 
 
 def _cross_vault_link(vault_name: str, path: Path) -> str:
     file = quote(path.with_suffix("").as_posix(), safe="")
-    return f"- [{path.stem}](obsidian://open?vault={quote(vault_name, safe='')}&file={file}) ({path.as_posix()})"
+    return f"[{path.stem}](obsidian://open?vault={quote(vault_name, safe='')}&file={file})"

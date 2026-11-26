@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from html.parser import HTMLParser
 
-REMINDER = "Права Агента здесь не задаются: они записаны отдельно, в шапке Скилла."
+REMINDER = "Codex получает Скилл, Транскрипт, Словарь терминов и названия заметок для ссылок."
 
 
 class Sections(HTMLParser):
@@ -35,7 +35,7 @@ class Sections(HTMLParser):
             self._section.append(data)
 
 
-def test_reminder_that_agent_permissions_live_in_skill_header_is_shown_in_meeting_section(spook):
+def test_meeting_section_explains_which_information_codex_receives(spook):
     response = spook.http.get(f"{spook.base_url}/settings")
 
     assert response.status_code == 200

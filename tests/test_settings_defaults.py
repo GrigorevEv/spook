@@ -105,7 +105,7 @@ def test_without_settings_file_screen_shows_default_folders_skills_models_effort
     assert {key: values[key] for key in ("meeting.folder", "meeting.skill", "meeting.model", "meeting.effort")} == {
         "meeting.folder": str(service.home / "Documents/notes/работа"),
         "meeting.skill": "spook-meeting",
-        "meeting.model": "opus",
+        "meeting.model": "gpt-6.2-astra",
         "meeting.effort": "high",
     }
     assert not any(key.startswith("lecture.") for key in values)

@@ -5,6 +5,8 @@ from html import unescape
 from pathlib import Path
 from urllib.parse import quote
 
+from conftest import agent_model_and_effort
+
 
 def write_note(folder: Path, name: str, date: str, start: str, end: str | None, tag: str, summary: str = "") -> Path:
     folder.mkdir(parents=True, exist_ok=True)
@@ -106,7 +108,7 @@ def test_commands_accept_only_notes_from_meetings_folder(spook, tmp_path):
 
     for note in refused:
         for action in ("obsidian", "agent"):
-            response = command(spook, action, note, model="opus", effort="high", confirm="yes")
+            response = command(spook, action, note, model="gpt-6.2-astra", effort="high", confirm="yes")
             assert response.status_code == 409, (action, note)
 
     assert spook.opener.calls() == [] and spook.agent.calls() == []
@@ -118,50 +120,47 @@ def row_of(spook, name: str) -> str:
 
 
 def test_restart_agent_warns_that_summary_will_be_rewritten_and_runs_with_chosen_model_and_effort(spook):
-    spook.write_settings(meeting={"model": "sonnet", "effort": "medium"})
+    spook.write_settings(meeting={"model": "gpt-6.2-astra", "effort": "medium"})
     note = write_note(spook.meetings_dir, "2026-11-05 10-00 Репликация в Raft", "2026-11-05", "10:00", "11:05", "встреча", "## Суть\n\nПро Raft.")
     row = row_of(spook, note.stem)
     assert "Перезапустить Агента" in row
     assert "Выжимка будет написана заново" in row
-    assert '<option value="sonnet" selected>' in row and '<option value="medium" selected>' in row
+    assert '<option value="gpt-6.2-astra" selected>' in row and '<option value="medium" selected>' in row
     assert '<input type="checkbox" name="confirm" value="yes" required>' in row
     spook.agent.play("summary")
 
-    unconfirmed = command(spook, "agent", note, model="haiku", effort="low")
+    unconfirmed = command(spook, "agent", note, model="gpt-6.2-sol", effort="low")
     assert unconfirmed.status_code == 409
     assert "Выжимка будет написана заново" in unconfirmed.text
     assert spook.agent.calls() == []
 
-    assert command(spook, "agent", note, model="haiku", effort="low", confirm="yes").status_code == 200
+    assert command(spook, "agent", note, model="gpt-6.2-sol", effort="low", confirm="yes").status_code == 200
     spook.wait_until(lambda: "готово" in rows(notes_page(spook))[0] and spook.notify.calls())
 
     [call] = spook.agent.calls()
-    assert call["argv"][: call["argv"].index("--disallowedTools")] == [
-        "-p", f"/spook-meeting {note}", "--model", "haiku", "--effort", "low",
-        "--output-format", "stream-json", "--verbose", "--include-hook-events",
-        "--permission-mode", "default", "--permission-prompts", "none",
-    ]
-    assert call["cwd"] == str(spook.meetings_dir)
+    assert agent_model_and_effort(call) == ("gpt-6.2-sol", "low")
+    assert call["input"]["topic"] == "Репликация в Raft"
+    assert call["input"]["transcript"].strip() == "**10:00 Собеседники:** Реплика."
 
 
 def test_restart_after_which_agent_left_old_summary_unchanged_gives_error_summary_not_updated(spook):
-    note = write_note(spook.meetings_dir, "2026-11-05 10-00 Репликация в Raft", "2026-11-05", "10:00", "11:05", "встреча", "## Суть\n\nПро Raft.")
-    spook.agent.play("nothing")
+    note = write_note(spook.meetings_dir, "2026-11-05 10-00 Репликация в Raft", "2026-11-05", "10:00", "11:05", "встреча", "## Суть\n\nПро тесты.")
+    spook.agent.play("same-summary")
 
-    assert command(spook, "agent", note, model="haiku", effort="low", confirm="yes").status_code == 200
+    assert command(spook, "agent", note, model="gpt-6.2-sol", effort="low", confirm="yes").status_code == 200
     spook.wait_until(lambda: "ошибка" in rows(notes_page(spook))[0])
 
     assert "Агент завершился, но Выжимка не обновлена" in rows(notes_page(spook))[0]
-    assert "Про Raft." in note.read_text(encoding="utf-8")
+    assert "Про тесты." in note.read_text(encoding="utf-8")
 
 
 def test_after_restarts_session_screen_shows_note_once_with_last_run_state(spook):
     note = write_note(spook.meetings_dir, "2026-11-05 10-00 Репликация в Raft", "2026-11-05", "10:00", "11:05", "встреча", "## Суть\n\nПро Raft.")
     spook.agent.play("summary")
-    assert command(spook, "agent", note, model="haiku", effort="low", confirm="yes").status_code == 200
+    assert command(spook, "agent", note, model="gpt-6.2-sol", effort="low", confirm="yes").status_code == 200
     spook.wait_until(lambda: "готово" in rows(notes_page(spook))[0])
-    spook.agent.play("nothing")
-    assert command(spook, "agent", note, model="haiku", effort="low", confirm="yes").status_code == 200
+    spook.agent.play("same-summary")
+    assert command(spook, "agent", note, model="gpt-6.2-sol", effort="low", confirm="yes").status_code == 200
     spook.wait_until(lambda: "ошибка" in rows(notes_page(spook))[0])
 
     agent_block = spook.page().text.split('<section id="agent"', 1)[1].split("</section>", 1)[0]
@@ -174,17 +173,17 @@ def test_after_restarts_session_screen_shows_note_once_with_last_run_state(spook
 def test_agent_log_after_restart_keeps_previous_run_before_new_one(spook):
     note = write_note(spook.meetings_dir, "2026-11-05 10-00 Репликация в Raft", "2026-11-05", "10:00", "11:05", "встреча", "## Суть\n\nПро Raft.")
     spook.agent.play("summary")
-    command(spook, "agent", note, model="sonnet", effort="medium", confirm="yes")
+    command(spook, "agent", note, model="gpt-6.2-astra", effort="medium", confirm="yes")
     spook.wait_until(lambda: "готово" in rows(notes_page(spook))[0])
     spook.agent.play("nothing")
-    command(spook, "agent", note, model="haiku", effort="low", confirm="yes")
+    command(spook, "agent", note, model="gpt-6.2-sol", effort="low", confirm="yes")
     spook.wait_until(lambda: "ошибка" in rows(notes_page(spook))[0])
 
     journal = spook.http.get(f"{spook.base_url}/agent/log", params={"note": note.stem}).text
 
-    first, second = journal.index("--model sonnet"), journal.index("--model haiku")
-    assert first < journal.index("сценарий «summary»") < journal.index("Выжимка: готово") < second
-    assert second < journal.index("сценарий «nothing»") < journal.index("Выжимка: ошибка")
+    first, second = journal.index("--model gpt-6.2-astra"), journal.index("--model gpt-6.2-sol")
+    assert first < journal.index("turn.completed") < journal.index("Выжимка: готово") < second
+    assert second < journal.rindex("turn.completed") < journal.index("Выжимка: ошибка")
 
 
 def test_note_without_summary_offers_agent_start_without_warning(spook):
@@ -192,21 +191,17 @@ def test_note_without_summary_offers_agent_start_without_warning(spook):
     row = row_of(spook, note.stem)
     assert "Запустить Агента" in row and "Перезапустить Агента" not in row
     assert "Выжимка будет написана заново" not in row
-    assert '<option value="opus" selected>' in row and '<option value="high" selected>' in row
+    assert '<option value="gpt-6.2-astra" selected>' in row and '<option value="high" selected>' in row
     spook.agent.play("fail")
 
-    assert command(spook, "agent", note, model="opus", effort="high").status_code == 200
+    assert command(spook, "agent", note, model="gpt-6.2-astra", effort="high").status_code == 200
     spook.wait_until(lambda: "ошибка" in rows(notes_page(spook))[0])
 
     assert rows(notes_page(spook)) == ["2026-11-06 14:02 | без Темы | Встреча | 45 мин | ошибка Сценарий: Агент упал."]
     [call] = spook.agent.calls()
-    assert call["argv"][:14] == [
-        "-p", f"/spook-meeting {note}", "--model", "opus", "--effort", "high",
-        "--output-format", "stream-json", "--verbose", "--include-hook-events",
-        "--permission-mode", "default", "--permission-prompts", "none",
-    ]
-    assert "--append-system-prompt-file" in call["argv"]
-    assert call["cwd"] == str(spook.meetings_dir)
+    assert agent_model_and_effort(call) == ("gpt-6.2-astra", "high")
+    assert call["input"]["topic"] == ""
+    assert str(note) not in call["argv"]
 
 
 def test_agent_log_opens_for_every_note_that_had_a_run(spook):
@@ -220,7 +215,7 @@ def test_agent_log_opens_for_every_note_that_had_a_run(spook):
     lecture_log = spook.state_dir / "agent" / "lecture" / f"{ran_now.stem}.log"
     lecture_log.parent.mkdir()
     lecture_log.write_text("Старый Журнал Агента.\n", encoding="utf-8")
-    command(spook, "agent", ran_now, model="opus", effort="high")
+    command(spook, "agent", ran_now, model="gpt-6.2-astra", effort="high")
     spook.wait_until(lambda: "готово" in rows(notes_page(spook))[0])
 
     for note, log in (
@@ -239,13 +234,13 @@ def test_agent_log_opens_for_every_note_that_had_a_run(spook):
 def test_agent_is_not_started_twice_for_note_waiting_for_it(spook):
     spook.agent.play("wait")
     note = write_note(spook.meetings_dir, "2026-11-06 14-02 Встреча", "2026-11-06", "14:02", "14:47", "встреча")
-    assert command(spook, "agent", note, model="opus", effort="high").status_code == 200
+    assert command(spook, "agent", note, model="gpt-6.2-astra", effort="high").status_code == 200
     spook.wait_until(lambda: len(spook.agent.calls()) == 1)
     row = row_of(spook, note.stem)
     assert "работает" in row and "Запустить Агента" not in row
     assert 'hx-get="/notes/row?note=' in row
 
-    again = command(spook, "agent", note, model="opus", effort="high")
+    again = command(spook, "agent", note, model="gpt-6.2-astra", effort="high")
 
     assert again.status_code == 409 and "уже работает" in again.text
     spook.agent.release()
@@ -263,7 +258,7 @@ def test_note_of_running_session_is_listed_without_agent_run(spook):
 
     row = row_of(spook, note.stem)
     assert "Сессия идёт" in row and "Запустить Агента" not in row
-    response = command(spook, "agent", note, model="opus", effort="high")
+    response = command(spook, "agent", note, model="gpt-6.2-astra", effort="high")
     assert response.status_code == 409 and "Сессия с этой Заметкой ещё идёт" in response.text
     assert spook.agent.calls() == []
 
@@ -271,7 +266,7 @@ def test_note_of_running_session_is_listed_without_agent_run(spook):
 def test_agent_run_refuses_model_or_effort_that_is_not_a_plain_name(spook):
     note = write_note(spook.meetings_dir, "2026-11-06 14-02 Встреча", "2026-11-06", "14:02", "14:47", "встреча")
 
-    for model, effort in (("--dangerously-skip-permissions", "high"), ("opus", "high --verbose"), ("", "high")):
+    for model, effort in (("--unsafe", "high"), ("gpt-6.2-astra", "high --verbose"), ("", "high")):
         assert command(spook, "agent", note, model=model, effort=effort).status_code == 409
 
     assert spook.agent.calls() == []

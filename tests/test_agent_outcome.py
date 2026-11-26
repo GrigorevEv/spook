@@ -3,25 +3,13 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from conftest import speech
+import pytest
+
+from conftest import note_text
 from test_agent_block import ShownJob, jobs_on_screen
+from test_agent_launch import journal, run_agent
 
 NOTE_NAME = "2026-11-06 14-02 Встреча"
-
-
-def run_agent(spook, scenario: str, until: str) -> None:
-    spook.agent.play(scenario)
-    spook.recognizer.say("Реплика.")
-    spook.start_meeting()
-    with spook.events() as events:
-        spook.feed_system(speech(20))
-        events.wait_for("paragraph", containing="Реплика.")
-        spook.stop()
-        events.wait_for("agent", containing=until)
-
-
-def journal(spook) -> str:
-    return (spook.state_dir / "agent" / "meeting" / f"{NOTE_NAME}.log").read_text(encoding="utf-8")
 
 
 def running_agent_processes(spook) -> list[Path]:
@@ -32,7 +20,7 @@ def running_agent_processes(spook) -> list[Path]:
             arguments = cmdline.read_bytes().split(b"\0")
         except OSError:
             continue
-        if control in arguments and any(argument.endswith(b"claude_stub.py") for argument in arguments):
+        if control in arguments and any(argument.endswith(b"codex_stub.py") for argument in arguments):
             found.append(cmdline.parent)
     return found
 
@@ -49,31 +37,36 @@ def test_agent_hanging_longer_than_timeout_is_stopped_and_error_time_exceeded_is
     assert journal(spook).endswith(f"Выжимка: ошибка — {shown.reason}\n")
 
 
-def test_agent_that_finished_without_summary_shows_error_with_reason_summary_missing(spook):
-    run_agent(spook, "nothing", until="ошибка")
+@pytest.mark.parametrize(
+    ("scenario", "reason"),
+    [
+        ("nothing", "Агент завершился, но Выжимки в Заметке нет"),
+        ("empty", "Агент завершился, но Выжимки в Заметке нет"),
+        ("malformed", "Некорректный ответ Codex: ожидались Выжимка и Тема в JSON"),
+    ],
+)
+def test_unusable_reply_reports_the_reason_and_preserves_the_transcript(spook, scenario, reason):
+    run_agent(spook, scenario, until="ошибка")
 
-    assert jobs_on_screen(spook) == {NOTE_NAME: ShownJob("ошибка", "Агент завершился, но Выжимки в Заметке нет")}
-
-
-def test_note_deleted_by_agent_gives_error_with_reason_summary_missing(spook):
-    run_agent(spook, "delete-note", until="ошибка")
-
-    assert jobs_on_screen(spook) == {NOTE_NAME: ShownJob("ошибка", "Агент завершился, но Выжимки в Заметке нет")}
-
-
-def test_run_without_network_journal_ends_with_return_code_and_reason_no_network(spook):
-    run_agent(spook, "replay no-network 1", until="ошибка")
-
-    assert jobs_on_screen(spook) == {NOTE_NAME: ShownJob("ошибка", "Нет сети")}
-    assert journal(spook).endswith("\nКод возврата: 1. Выжимка: ошибка — Нет сети\n")
+    assert jobs_on_screen(spook) == {NOTE_NAME: ShownJob("ошибка", reason)}
+    assert "## Суть" not in note_text(spook)
+    assert note_text(spook).endswith("**14:02 Собеседники:** Реплика.\n")
 
 
-def test_permission_denials_without_summary_are_reason_of_error_from_its_start(spook):
-    run_agent(spook, "replay success-with-denials 0", until="ошибка")
+@pytest.mark.parametrize(
+    ("scenario", "reason"),
+    [
+        ("no-network", "Нет сети"), ("rate-limit", "Исчерпан лимит подписки"),
+        ("error-after-summary", "Сбой после ответа"),
+    ],
+)
+def test_failed_turn_reports_reason_in_screen_and_journal_and_leaves_note_intact(spook, scenario, reason):
+    run_agent(spook, scenario, until="ошибка")
 
-    shown = jobs_on_screen(spook)[NOTE_NAME]
-    assert shown.state == "ошибка"
-    assert shown.reason.startswith("Отказ в правах: Read ")
+    assert jobs_on_screen(spook) == {NOTE_NAME: ShownJob("ошибка", reason)}
+    assert journal(spook).endswith(f"Код возврата: 1. Выжимка: ошибка — {reason}\n")
+    assert "## Суть" not in note_text(spook)
+    assert note_text(spook).endswith("**14:02 Собеседники:** Реплика.\n")
 
 
 def test_unsent_notification_leaves_outcome_done(spook, caplog):

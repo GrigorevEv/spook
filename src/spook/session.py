@@ -210,12 +210,13 @@ class SessionService:
         self._speech_detector = speech_detector
         self._clock = clock
         self._agent = agent
-        self._lock = threading.RLock()
+        self._lock = agent.note_lock
         self._state = SessionState.NONE
         self._run: _Run | None = None
         self._subscribers: list[Subscription] = []
         self._store = SessionStore(record_path)
         agent.on_change = self._on_agent_change
+        agent.on_topic = self._accept_agent_topic
 
     def start(self, kind: SessionKind = SessionKind.MEETING, topic: str = "") -> SessionView:
         with self._lock:
@@ -371,6 +372,13 @@ class SessionService:
                 run.topic = run.named_topic = topic
                 self._publish(StateChanged(self.view()))
             return new_path
+
+    def _accept_agent_topic(self, note_path: Path, topic: str) -> str:
+        try:
+            self.rename_note(note_path, topic)
+        except CommandRejected as error:
+            return str(error)
+        return ""
 
     def restore(self) -> None:
         record = self._store.load()

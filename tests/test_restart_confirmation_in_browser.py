@@ -41,4 +41,5 @@ def test_restart_form_shows_warning_and_is_not_sent_until_confirmation_is_checke
     expect(row).to_contain_text("готово")
     assert sent == [f"{spook.base_url}/notes/agent"]
     [call] = spook.agent.calls()
-    assert call["argv"][1] == f"/spook-meeting {note}"
+    assert call["input"]["topic"] == "Репликация в Raft"
+    assert "## Суть" in note.read_text(encoding="utf-8")

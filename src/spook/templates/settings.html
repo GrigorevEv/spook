@@ -29,8 +29,8 @@
       <section aria-labelledby="{{ kind.value }}-title">
         <h2 id="{{ kind.value }}-title">{{ kind.label }}</h2>
         {{ text_field(kind.value ~ ".folder", "Папка Заметок") }}
-        <p class="hint">Права Агента здесь не задаются: они записаны отдельно, в шапке Скилла.</p>
         {{ text_field(kind.value ~ ".skill", "Скилл") }}
+        <p class="hint">Codex получает Скилл, Транскрипт, Словарь терминов и названия заметок для ссылок.</p>
         {{ text_field(kind.value ~ ".model", "Модель Агента", list="models") }}
         {% set effort_name = kind.value ~ ".effort" %}
         <label for="{{ effort_name }}">Effort Агента</label>
