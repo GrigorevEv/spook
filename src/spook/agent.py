@@ -6,6 +6,7 @@ import os
 import shlex
 import signal
 import subprocess
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, replace
@@ -14,17 +15,16 @@ from pathlib import Path
 from queue import Queue
 from typing import BinaryIO, Callable
 
-from spook.claude_output import read_output
-from spook.meeting_context import write_meeting_context
+from spook import codex
+from spook.meeting_context import meeting_input
 from spook.note import Note, TranscriptGuard
 from spook.notify import send_notification
-from spook.settings import KindSettings, SessionKind, Settings
+from spook.settings import KindSettings, SessionKind, Settings, codex_model
 
 log = logging.getLogger(__name__)
 
 KILL_GRACE_SECONDS = 10
 RECENT_JOBS = 5
-STREAM_JSON_NEEDS_VERBOSE = ("--output-format", "stream-json", "--verbose")
 
 
 class SummaryState(StrEnum):
@@ -52,7 +52,6 @@ class AgentJob:
     skill: str
     model: str
     effort: str
-    cwd: Path
 
     @classmethod
     def for_note(cls, note_path: Path, kind: SessionKind, settings: KindSettings) -> AgentJob:
@@ -62,40 +61,11 @@ class AgentJob:
             skill=settings.skill,
             model=settings.model,
             effort=settings.effort,
-            cwd=settings.agent_cwd or settings.folder,
         )
 
     @property
     def note_name(self) -> str:
         return self.note_path.stem
-
-    def command(self, program: str, denied: list[str] | None = None) -> list[str]:
-        return [
-            program,
-            "-p", f"/{self.skill} {self.note_path}",
-            "--model", self.model,
-            "--effort", self.effort,
-            *STREAM_JSON_NEEDS_VERBOSE, "--include-hook-events",
-            "--permission-mode", "default", "--permission-prompts", "none",
-            *(["--disallowedTools", *denied] if denied else []),
-        ]
-
-
-def denied_rules(settings: Settings, cwd: Path) -> list[str]:
-    folders: list[Path] = []
-    for folder in (cwd, settings.meeting.folder, settings.wiki):
-        if folder not in folders:
-            folders.append(folder)
-    return [
-        *(f"Edit({_absolute_rule_path(folder)}/**/.claude/**)" for folder in folders),
-        f"Edit({_absolute_rule_path(settings.wiki)}/_tools/**)",
-        f"Edit({_absolute_rule_path(settings.wiki)}/_templates/**)",
-    ]
-
-
-def _absolute_rule_path(path: Path) -> str:
-    return f"/{path}"
-
 
 @dataclass(frozen=True)
 class AgentResult:
@@ -139,7 +109,6 @@ class _Record:
             "skill": self.job.skill,
             "model": self.job.model,
             "effort": self.job.effort,
-            "cwd": str(self.job.cwd),
             "state": self.state.value,
             "snapshot": self.snapshot,
         }
@@ -150,9 +119,8 @@ class _Record:
             note_path=Path(data["note"]),
             kind=SessionKind(data["kind"]),
             skill=data["skill"],
-            model=data["model"],
+            model=codex_model(data["model"]),
             effort=data["effort"],
-            cwd=Path(data["cwd"]),
         )
         return cls(job, SummaryState(data["state"]), snapshot=data.get("snapshot"))
 
@@ -169,6 +137,8 @@ class AgentQueue:
         self._records: list[_Record] = []
         self._pending: Queue[_Record] = Queue()
         self._worker: threading.Thread | None = None
+        self.note_lock = threading.RLock()
+        self.on_topic: Callable[[Path, str], str]
         self.on_change: Callable[[], None] = lambda: None
 
     def enqueue(self, job: AgentJob) -> None:
@@ -320,67 +290,70 @@ class AgentQueue:
 
     def _run(self, record: _Record) -> AgentResult:
         settings = self._load_settings()
-        program = settings.programs.claude
         timeout = settings.agent.timeout_minutes * 60
-        job = self._current_job(record)
-        command = _wrapped(settings.agent.wrapper, timeout) + job.command(program, denied_rules(settings, job.cwd))
-        context = write_meeting_context(settings, job.note_path, self._log_dir / "meeting-context.md")
-        command += ["--append-system-prompt-file", str(context)]
-        guard = TranscriptGuard.remember(job.note_path)
-        with self._lock:
-            record.snapshot = guard.snapshot
-            self._persist_under_lock()
-        summary_before = Note(job.note_path).summary()
-        skill_warning = _skill_header_warning(job)
-        log_path = self.log_path(job.note_name, job.kind)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        with log_path.open("a+b") as journal:
+        with self.note_lock:
+            job = self._current_job(record)
+            log_path = self.log_path(job.note_name, job.kind)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            journal_file = log_path.open("a+b")
+        with journal_file as journal, tempfile.TemporaryDirectory(prefix="spook-codex-") as temporary:
+            folder = Path(temporary)
+            output = folder / "result.json"
+            command = _wrapped(settings.agent.wrapper, timeout) + codex.command(
+                settings.programs.codex, job.model, job.effort, output
+            )
             if journal.tell():
                 journal.write(b"\n")
-            journal.write(f"$ {shlex.join(command)}\n(рабочий каталог: {job.cwd})\n\n".encode("utf-8"))
-            if skill_warning:
-                journal.write(f"{skill_warning}\n\n".encode("utf-8"))
+            journal.write(f"$ {shlex.join(command)}\n(рабочий каталог: {folder})\n\n".encode("utf-8"))
             journal.flush()
             output_start = journal.tell()
             try:
-                returncode, stderr_bytes, timed_out = _launch(command, job.cwd, journal, timeout)
-            except OSError as error:
-                result = AgentResult(SummaryState.FAILED, f"Не удалось запустить {program}: {error.strerror or error}")
+                with self.note_lock:
+                    job = self._current_job(record)
+                    note = Note(job.note_path)
+                    guard = TranscriptGuard.remember(job.note_path)
+                    with self._lock:
+                        record.snapshot = guard.snapshot
+                        self._persist_under_lock()
+                    prompt = meeting_input(settings, note, job.skill)
+                returncode, stderr_bytes, timed_out = _launch(command, folder, journal, timeout, prompt)
+            except (OSError, ValueError) as error:
+                result = AgentResult(SummaryState.FAILED, f"Не удалось запустить Codex: {error}")
             else:
                 journal.seek(output_start)
                 stdout = journal.read().decode("utf-8", errors="replace")
                 stderr = stderr_bytes.decode("utf-8", errors="replace")
                 if stderr.strip():
                     journal.write(f"\n--- stderr ---\n{stderr}".encode("utf-8"))
-                job = self._current_job(record)
-                warning = guard.restore(job.note_path)
-                if warning:
-                    log.warning("Охрана Транскрипта, %s: %s", job.note_name, warning)
-                    journal.write(f"\nОхрана Транскрипта: {warning}\n".encode("utf-8"))
-                if timed_out:
-                    minutes = f"{settings.agent.timeout_minutes:g}"
-                    judged = AgentResult(SummaryState.FAILED, f"Превышено время: Агент работал дольше {minutes} мин", returncode)
-                else:
-                    judged = self._judge(job, returncode, stdout, stderr, summary_before)
-                if judged.warning:
-                    journal.write(f"\n{judged.warning}\n".encode("utf-8"))
-                result = replace(judged, warning=_joined(skill_warning, judged.warning, warning))
+                reason = (
+                    f"Превышено время: Агент работал дольше {settings.agent.timeout_minutes:g} мин"
+                    if timed_out else codex.failure(stdout, stderr, returncode)
+                )
+                with self.note_lock:
+                    note = Note(self._current_job(record).note_path)
+                    warning = guard.restore(note.path)
+                    if warning:
+                        log.warning("Охрана Транскрипта, %s: %s", note.path.name, warning)
+                        journal.write(f"\nОхрана Транскрипта: {warning}\n".encode("utf-8"))
+                    result = self._save_reply(note, output, reason, returncode)
+                    if result.warning:
+                        journal.write(f"\n{result.warning}\n".encode("utf-8"))
+                    result = replace(result, warning=" ".join(filter(None, (warning, result.warning))))
             journal.write(_closing_line(result).encode("utf-8"))
         return result
 
-    def _judge(self, job: AgentJob, returncode: int, stdout: str, stderr: str, summary_before: str) -> AgentResult:
-        verdict = read_output(stdout, stderr, returncode)
-        if verdict.failure:
-            return AgentResult(SummaryState.FAILED, verdict.failure, returncode, warning=verdict.denials)
+    def _save_reply(self, note: Note, output: Path, reason: str, returncode: int) -> AgentResult:
+        if reason:
+            return AgentResult(SummaryState.FAILED, reason, returncode)
         try:
-            summary = Note(job.note_path).summary()
-        except OSError as error:
-            return AgentResult(SummaryState.FAILED, f"Заметка не прочитана: {error.strerror or error}", returncode)
-        if not summary:
-            return AgentResult(SummaryState.FAILED, verdict.denials or "Агент завершился, но Выжимки в Заметке нет", returncode)
-        if summary == summary_before:
-            return AgentResult(SummaryState.FAILED, verdict.denials or "Агент завершился, но Выжимка не обновлена", returncode)
-        return AgentResult(SummaryState.DONE, returncode=returncode, warning=verdict.denials)
+            reply = codex.read_reply(output)
+            if reply.summary == note.summary():
+                raise ValueError("Агент завершился, но Выжимка не обновлена")
+            note.set_summary(reply.summary)
+        except (OSError, ValueError) as error:
+            return AgentResult(SummaryState.FAILED, str(error), returncode)
+        warning = self.on_topic(note.path, reply.topic) if reply.topic and not note.has_topic else ""
+        return AgentResult(SummaryState.DONE, returncode=returncode, warning=warning)
 
     def _notify(self, job: AgentJob, result: AgentResult) -> None:
         if result.state is SummaryState.DONE:
@@ -394,44 +367,20 @@ def _escapes_log_dir(note_name: str) -> bool:
     return not note_name or Path(note_name).name != note_name or note_name in (".", "..")
 
 
-def _skill_header_warning(job: AgentJob) -> str:
-    user_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude").expanduser()
-    skill_dirs_by_precedence = (user_dir / "skills", job.cwd / ".claude" / "skills")
-    for skills_dir in skill_dirs_by_precedence:
-        try:
-            text = (skills_dir / job.skill / "SKILL.md").read_text(encoding="utf-8")
-        except OSError:
-            continue
-        keys = _header_keys(text)
-        named = ", ".join(key for key in ("model", "effort") if key in keys)
-        return f"В шапке Скилла {job.skill} указаны {named} — они перебивают модель и effort из настроек Spook." if named else ""
-    return ""
-
-
-def _header_keys(text: str) -> set[str]:
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        return set()
-    keys = set()
-    for line in lines[1:]:
-        if line.strip() == "---":
-            return keys
-        if line[:1].strip() and ":" in line:
-            keys.add(line.split(":", 1)[0].strip())
-    return set()
 
 
 def _wrapped(wrapper: str, timeout: float) -> list[str]:
     return shlex.split(wrapper.replace("{timeout}", str(round(timeout)))) if wrapper.strip() else []
 
 
-def _launch(command: list[str], cwd: Path, journal: BinaryIO, timeout: float) -> tuple[int, bytes, bool]:
+def _launch(command: list[str], cwd: Path, journal: BinaryIO, timeout: float, prompt: str) -> tuple[int, bytes, bool]:
     started = time.monotonic()
     process = subprocess.Popen(
-        command, cwd=cwd, stdin=subprocess.DEVNULL, stdout=journal, stderr=subprocess.PIPE, start_new_session=True
+        command, cwd=cwd, env=codex.environment(cwd), stdin=subprocess.PIPE, stdout=journal,
+        stderr=subprocess.PIPE, start_new_session=True,
     )
     try:
-        _, stderr = process.communicate(timeout=timeout)
+        _, stderr = process.communicate(input=prompt.encode("utf-8"), timeout=timeout)
     except subprocess.TimeoutExpired:
         _signal_group(process, signal.SIGTERM)
         try:
@@ -451,8 +400,6 @@ def _signal_group(process: subprocess.Popen, signum: int) -> None:
         pass
 
 
-def _joined(*warnings: str) -> str:
-    return " ".join(warning for warning in warnings if warning)
 
 
 def _closing_line(result: AgentResult) -> str:

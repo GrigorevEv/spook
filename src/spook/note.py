@@ -126,6 +126,16 @@ class Note:
         name = parse_name(self.path.stem)
         return name is None or name.has_topic
 
+    @property
+    def topic(self) -> str:
+        name = parse_name(self.path.stem)
+        return name.rest if name and name.has_topic else ""
+
+    @property
+    def date(self) -> str:
+        name = parse_name(self.path.stem)
+        return name.date if name else ""
+
     def rename_with_topic(self, topic: str) -> Path:
         topic = clean_topic(topic)
         if not topic:
@@ -210,6 +220,19 @@ class Note:
             return ""
         start = 0 if closing is None else closing + 1
         return "\n".join(lines[start:heading]).strip()
+
+    def set_summary(self, summary: str) -> None:
+        summary = summary.strip()
+        if not summary or TRANSCRIPT_HEADING in summary.splitlines():
+            raise ValueError("Недопустимая Выжимка")
+        with self.path.open(encoding="utf-8", newline="") as file:
+            lines = file.read().splitlines(keepends=True)
+        headings = [line.rstrip("\r\n") for line in lines]
+        heading = transcript_line(headings)
+        closing = _properties_end(headings)
+        if heading is None or closing is None or closing >= heading:
+            raise ValueError("В Заметке не найдены свойства или Транскрипт")
+        _write_atomically(self.path, "".join(lines[:closing + 1]) + f"\n{summary}\n\n" + "".join(lines[heading:]))
 
 
 class TranscriptGuard:

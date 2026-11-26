@@ -29,11 +29,11 @@ build-backend = "uv_build"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Быстрые тесты идут без сети и без PipeWire; медленные включаются явно: `-m slow`, `-m pipewire`, `-m browser`,
-# настоящий Claude Code (тратит лимиты подписки) — `-m claude`.
-addopts = "--strict-markers -m 'not slow and not pipewire and not browser and not claude'"
+# настоящий Codex (тратит лимиты подписки) — `-m codex`.
+addopts = "--strict-markers -m 'not slow and not pipewire and not browser and not codex'"
 markers = [
     "slow: медленные тесты — настоящая модель распознавания",
     "pipewire: нужен PipeWire и виртуальные устройства",
     "browser: нужен браузер Playwright",
-    "claude: настоящий Claude Code по подписке, нужен VPN",
+    "codex: настоящий Codex по подписке",
 ]

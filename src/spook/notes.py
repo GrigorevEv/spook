@@ -9,7 +9,7 @@ from urllib.parse import quote
 
 from spook.agent import AgentJob, AgentQueue, SummaryState
 from spook.note import Note, NoteNotFound, find_session_note, has_lecture_tag, parse_name, read_properties
-from spook.settings import EFFORTS, SessionKind, Settings
+from spook.settings import EFFORTS, MODELS, SessionKind, Settings, codex_model
 
 _TIME = re.compile(r"^(\d{1,2}):(\d{2})$")
 
@@ -97,7 +97,7 @@ def run_agent(
     if current is not None and current.state in (SummaryState.QUEUED, SummaryState.RUNNING):
         raise NoteRefused(f"Агент для этой Заметки уже {current.state.label}")
     model, effort = model.strip(), effort.strip()
-    if not _SAFE_FLAG_VALUE.match(model):
+    if not _SAFE_FLAG_VALUE.fullmatch(model) or codex_model(model) != model:
         raise NoteRefused(f"Недопустимая модель: {model or 'не выбрана'}")
     if not _SAFE_FLAG_VALUE.match(effort):
         raise NoteRefused(f"Недопустимый effort: {effort or 'не выбран'}")
@@ -106,9 +106,6 @@ def run_agent(
     job = AgentJob.for_note(path, kind, settings.for_kind(kind))
     agent.enqueue(replace(job, model=model, effort=effort))
     return path
-
-
-MODELS = ("opus", "sonnet", "haiku")
 
 
 @dataclass(frozen=True)

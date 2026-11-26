@@ -25,16 +25,22 @@ class SessionKind(StrEnum):
         return "встреча"
 
 
-EFFORTS = ("low", "medium", "high", "xhigh", "max")
+DEFAULT_AGENT_MODEL = "gpt-6.2-astra"
+MODELS = (DEFAULT_AGENT_MODEL, "gpt-6.2-sol")
+EFFORTS = ("low", "medium", "high", "xhigh", "max", "ultra")
+
+
+def codex_model(model: str) -> str:
+    old = model.lower().partition("[")[0]
+    return DEFAULT_AGENT_MODEL if old in {"opus", "sonnet", "haiku", "opusplan"} or old.startswith("claude-") else model
 
 
 @dataclass(frozen=True)
 class KindSettings:
     folder: Path
     skill: str
-    model: str = "opus"
+    model: str = DEFAULT_AGENT_MODEL
     effort: str = "high"
-    agent_cwd: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -65,11 +71,12 @@ class RecognitionSettings:
 class AgentSettings:
     timeout_minutes: float = 15
     wrapper: str = ""
+    skills_dir: Path = field(default_factory=lambda: Path.home() / ".agents" / "skills")
 
 
 @dataclass(frozen=True)
 class ProgramSettings:
-    claude: str = str(Path("~/.local/bin/claude").expanduser())
+    codex: str = field(default_factory=lambda: str(Path.home() / ".local" / "bin" / "codex"))
     notify: str = "notify-send"
     open: str = "xdg-open"
 
@@ -134,7 +141,7 @@ def load_settings(path: Path | None = None) -> Settings:
         sources=_merge(defaults.sources, raw.get("sources", {})),
         recognition=_recognition(raw.get("recognition", {}), defaults.recognition),
         programs=_programs(raw.get("programs", {}), defaults.programs),
-        agent=_merge(defaults.agent, raw.get("agent", {})),
+        agent=_agent(raw.get("agent", {}), defaults.agent),
     )
 
 
@@ -144,13 +151,16 @@ def _path_or(value: Any, default: Path) -> Path:
 
 def _kind(raw: dict[str, Any], defaults: KindSettings) -> KindSettings:
     merged = _merge(defaults, raw)
-    agent_cwd = _home(str(raw["agent_cwd"])) if raw.get("agent_cwd") else defaults.agent_cwd
-    return replace(merged, folder=_path_or(raw.get("folder"), defaults.folder), agent_cwd=agent_cwd)
+    return replace(merged, folder=_path_or(raw.get("folder"), defaults.folder), model=codex_model(merged.model))
+
+
+def _agent(raw: dict[str, Any], defaults: AgentSettings) -> AgentSettings:
+    return replace(_merge(defaults, raw), skills_dir=_path_or(raw.get("skills_dir"), defaults.skills_dir))
 
 
 def _programs(raw: dict[str, Any], defaults: ProgramSettings) -> ProgramSettings:
     merged = _merge(defaults, raw)
-    return replace(merged, claude=os.path.expanduser(merged.claude))
+    return replace(merged, codex=os.path.expanduser(merged.codex))
 
 
 def _recognition(raw: dict[str, Any], defaults: RecognitionSettings) -> RecognitionSettings:
@@ -240,6 +250,8 @@ def _check_screen(form: Mapping[str, str]) -> tuple[dict[str, Any], dict[str, st
             errors[f"{prefix}.effort"] = (
                 f"Неизвестный effort «{value[f'{prefix}.effort']}»: допустимы {', '.join(EFFORTS)}"
             )
+        if codex_model(value[f"{prefix}.model"]) != value[f"{prefix}.model"]:
+            errors[f"{prefix}.model"] = "Выберите модель Codex"
     minutes_text = value["auto_stop_minutes"]
     try:
         minutes = float(minutes_text.replace(",", "."))
