@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import SESSION_START
+from conftest import SESSION_START, agent_model_and_effort
 from test_notes_screen import command, notes_page, write_note
 from test_settings_screen import save, settings_form
 
@@ -61,7 +61,7 @@ def test_legacy_settings_and_note_are_preserved_and_only_meetings_can_be_opened_
     assert str(meeting) in page and str(old) not in page
     assert spook.http.get(f"{spook.base_url}/notes/row", params={"note": str(meeting)}).text.strip().startswith("<tr")
     assert command(spook, "obsidian", old).status_code == 409
-    assert command(spook, "agent", old, model="opus", effort="high", confirm="yes").status_code == 409
+    assert command(spook, "agent", old, model="gpt-6.2-astra", effort="high", confirm="yes").status_code == 409
     assert command(spook, "wiki", old).status_code == 404
     assert spook.http.post(f"{spook.base_url}/agent/topic", data={"note": str(old), "topic": "Другая"}).status_code == 409
     assert old.read_bytes() == before
@@ -74,7 +74,7 @@ def queued_job(note: Path, kind: str, state: str, snapshot: str | None = None) -
         "kind": kind,
         "skill": f"spook-{kind}",
         "model": "opus",
-        "effort": "high",
+        "effort": "medium",
         "cwd": str(note.parent),
         "state": state,
         "snapshot": snapshot,
@@ -107,7 +107,9 @@ def test_restart_skips_old_session_and_agent_jobs_and_processes_queued_meeting(s
     spook.restart_service(60)
 
     spook.wait_until(lambda: spook.notify.calls())
-    assert [call["argv"][1] for call in spook.agent.calls()] == [f"/spook-meeting {meeting}"]
+    [call] = spook.agent.calls()
+    assert call["input"]["topic"] == "Планёрка"
+    assert agent_model_and_effort(call) == ("gpt-6.2-astra", "high")
     assert [call["argv"] for call in spook.notify.calls()] == [["Выжимка готова", meeting.stem]]
     assert "нет Сессии" in spook.page().text
     assert spook.audio.active_sources == set()

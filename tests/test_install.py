@@ -126,7 +126,7 @@ def test_skills_from_repository_are_linked_into_user_skills(tmp_path, home):
 
     install(repo, home=home, port=8765, run=Recorder())
 
-    link = home / ".claude/skills/spook-probe"
+    link = home / ".agents/skills/spook-probe"
     assert link.is_symlink()
     assert link.resolve() == (repo / "skills/spook-probe").resolve()
     assert (link / "SKILL.md").exists()
@@ -134,32 +134,32 @@ def test_skills_from_repository_are_linked_into_user_skills(tmp_path, home):
 
 def test_foreign_skill_with_same_name_is_left_untouched(tmp_path, home, capsys):
     repo = make_repo(tmp_path, "spook-probe")
-    foreign = home / ".claude/skills/spook-probe"
+    foreign = home / ".agents/skills/spook-probe"
     foreign.mkdir(parents=True)
     (foreign / "SKILL.md").write_text("чужой", encoding="utf-8")
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     (repo / "skills/spook-other").mkdir()
     (repo / "skills/spook-other/SKILL.md").write_text("---\n", encoding="utf-8")
-    (home / ".claude/skills/spook-other").symlink_to(elsewhere)
+    (home / ".agents/skills/spook-other").symlink_to(elsewhere)
 
     install(repo, home=home, port=8765, run=Recorder())
 
     assert not foreign.is_symlink()
     assert (foreign / "SKILL.md").read_text(encoding="utf-8") == "чужой"
-    assert (home / ".claude/skills/spook-other").resolve() == elsewhere.resolve()
+    assert (home / ".agents/skills/spook-other").resolve() == elsewhere.resolve()
     output = capsys.readouterr().out
     assert "spook-probe" in output and "spook-other" in output
 
 
 def test_link_to_vanished_copy_of_skill_is_replaced(tmp_path, home):
     repo = make_repo(tmp_path, "spook-probe")
-    (home / ".claude/skills").mkdir(parents=True)
-    (home / ".claude/skills/spook-probe").symlink_to(tmp_path / "old-worktree/skills/spook-probe")
+    (home / ".agents/skills").mkdir(parents=True)
+    (home / ".agents/skills/spook-probe").symlink_to(tmp_path / "old-worktree/skills/spook-probe")
 
     install(repo, home=home, port=8765, run=Recorder())
 
-    assert (home / ".claude/skills/spook-probe").resolve() == (repo / "skills/spook-probe").resolve()
+    assert (home / ".agents/skills/spook-probe").resolve() == (repo / "skills/spook-probe").resolve()
 
 
 def test_repeated_install_is_safe_and_changes_nothing(tmp_path, home):
@@ -174,7 +174,7 @@ def test_repeated_install_is_safe_and_changes_nothing(tmp_path, home):
     install(repo, home=home, port=8765, run=run)
 
     assert {path: path.read_text(encoding="utf-8") for path in files} == files
-    assert (home / ".claude/skills/spook-probe").resolve() == (repo / "skills/spook-probe").resolve()
+    assert (home / ".agents/skills/spook-probe").resolve() == (repo / "skills/spook-probe").resolve()
     assert [str(home / ".local/bin/spook"), "prepare"] in run.commands
     assert ["systemctl", "--user", "try-restart", "spook.service"] in run.commands
 
@@ -182,7 +182,7 @@ def test_repeated_install_is_safe_and_changes_nothing(tmp_path, home):
 def test_uninstall_removes_service_menu_entry_skill_links_and_tool(tmp_path, home):
     repo = make_repo(tmp_path, "spook-probe")
     install(repo, home=home, port=8765, run=Recorder())
-    foreign = home / ".claude/skills/someone-else"
+    foreign = home / ".agents/skills/someone-else"
     foreign.mkdir()
 
     run = Recorder()
@@ -196,7 +196,7 @@ def test_uninstall_removes_service_menu_entry_skill_links_and_tool(tmp_path, hom
     ]
     assert not (home / ".config/systemd/user/spook.service").exists()
     assert not (home / ".local/share/applications/spook.desktop").exists()
-    assert not (home / ".claude/skills/spook-probe").is_symlink()
+    assert not (home / ".agents/skills/spook-probe").is_symlink()
     assert foreign.is_dir()
 
 
@@ -206,11 +206,13 @@ def test_install_removes_own_old_lecture_skill_link_and_installs_meeting_skill(t
     skills.mkdir(parents=True)
     old = skills / "spook-lecture"
     old.symlink_to(repo / "skills/spook-lecture")
+    (skills / "spook-meeting").symlink_to(repo / "skills/spook-meeting")
 
     install(repo, home=home, port=8765, run=Recorder())
 
     assert not old.is_symlink()
-    assert (skills / "spook-meeting").resolve() == repo / "skills/spook-meeting"
+    assert not (skills / "spook-meeting").is_symlink()
+    assert (home / ".agents/skills/spook-meeting").resolve() == repo / "skills/spook-meeting"
 
 
 @pytest.mark.parametrize("linked", [False, True], ids=["directory", "foreign-link"])

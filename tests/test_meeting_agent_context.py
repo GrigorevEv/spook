@@ -37,16 +37,16 @@ def test_meeting_agent_gets_names_of_work_vault_and_wiki_notes_without_their_con
     note = finished_meeting(spook)
 
     [call] = spook.agent.calls()
-    assert call["argv"][:2] == ["-p", f"/spook-meeting {note}"]
-    context = call["append_system_prompt"]
-    assert "2026-10-01 10-00 Планирование релиза" in context
-    assert "Пароли" in context
-    assert "[Raft](obsidian://open?vault=wiki&file=Raft)" in context
-    assert "[SCST](obsidian://open?vault=wiki&file=SCST%2FSCST)" in context
-    assert str(spook.settings.terms_dictionary) in context
-    assert SECRET not in context
-    assert "Служебное" not in context and "схема" not in context
-    assert note.stem not in context
+    context = call["input"]
+    assert set(context["vault_notes"]) == {"2026-10-01 10-00 Планирование релиза", "Пароли", "Словарь терминов"}
+    assert context["wiki_notes"] == [
+        "[Raft](obsidian://open?vault=wiki&file=Raft)",
+        "[SCST](obsidian://open?vault=wiki&file=SCST%2FSCST)",
+    ]
+    assert context["terms_dictionary"] == spook.settings.terms_dictionary.read_text(encoding="utf-8")
+    assert context["transcript"].strip() == "**14:02 Собеседники:** Обсудим релиз."
+    assert context["date"] == "2026-11-06"
+    assert SECRET not in str(context) and str(note) not in str(context)
 
 
 def test_meeting_agent_creates_terms_dictionary_template_when_file_is_missing(spook):

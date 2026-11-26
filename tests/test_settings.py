@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from spook.settings import load_settings
 
 
@@ -11,7 +13,7 @@ def test_settings_without_file_have_defaults_from_spec(tmp_path: Path):
     assert settings.port == 8765
     assert settings.meeting.folder == Path.home() / "Documents/notes/работа"
     assert settings.meeting.skill == "spook-meeting"
-    assert (settings.meeting.model, settings.meeting.effort) == ("opus", "high")
+    assert (settings.meeting.model, settings.meeting.effort) == ("gpt-6.2-astra", "high")
     assert settings.auto_stop_minutes == 5
     assert settings.terms_dictionary == Path.home() / "Documents/notes/работа/Словарь терминов.md"
     assert settings.recognition.max_utterance_seconds == 20
@@ -22,9 +24,10 @@ def test_settings_without_file_have_defaults_from_spec(tmp_path: Path):
     assert settings.recognition.forced_cut_min_pause_ms == 100
     assert (settings.sources.system, settings.sources.mic) == ("", "")
     assert settings.wiki == Path.home() / "learn/wiki"
-    assert settings.programs.claude == str(Path.home() / ".local/bin/claude")
+    assert settings.programs.codex == str(Path.home() / ".local/bin/codex")
     assert settings.agent.timeout_minutes == 15
     assert settings.agent.wrapper == ""
+    assert settings.agent.skills_dir == Path.home() / ".agents/skills"
 
 
 def test_partial_settings_file_overrides_only_given_keys(tmp_path: Path):
@@ -38,7 +41,7 @@ def test_partial_settings_file_overrides_only_given_keys(tmp_path: Path):
         'effort = "medium"\n'
         "\n"
         "[programs]\n"
-        'claude = "/opt/claude/bin/claude"\n',
+        'codex = "/opt/codex/bin/codex"\n',
         encoding="utf-8",
     )
 
@@ -47,8 +50,8 @@ def test_partial_settings_file_overrides_only_given_keys(tmp_path: Path):
     assert settings.port == 9000
     assert settings.auto_stop_minutes == 7
     assert settings.meeting.folder == Path.home() / "meetings"
-    assert (settings.meeting.skill, settings.meeting.model, settings.meeting.effort) == ("spook-meeting", "opus", "medium")
-    assert settings.programs.claude == "/opt/claude/bin/claude"
+    assert (settings.meeting.skill, settings.meeting.model, settings.meeting.effort) == ("spook-meeting", "gpt-6.2-astra", "medium")
+    assert settings.programs.codex == "/opt/codex/bin/codex"
     assert settings.programs.notify == "notify-send"
 
 
@@ -62,7 +65,7 @@ def test_agent_section_sets_timeout_and_wrapper_and_wiki_root_expands_home(tmp_p
         'wrapper = "systemd-run --user --wait --pipe --collect --quiet --same-dir"\n'
         "\n"
         "[programs]\n"
-        'claude = "~/bin/claude"\n',
+        'codex = "~/bin/codex"\n',
         encoding="utf-8",
     )
 
@@ -71,7 +74,7 @@ def test_agent_section_sets_timeout_and_wrapper_and_wiki_root_expands_home(tmp_p
     assert settings.wiki == Path.home() / "vault/wiki"
     assert settings.agent.timeout_minutes == 20
     assert settings.agent.wrapper == "systemd-run --user --wait --pipe --collect --quiet --same-dir"
-    assert settings.programs.claude == str(Path.home() / "bin/claude")
+    assert settings.programs.codex == str(Path.home() / "bin/codex")
 
 
 def test_recognition_settings_default_to_model_chosen_by_benchmark(tmp_path: Path, monkeypatch):
@@ -94,3 +97,19 @@ def test_recognition_settings_from_file(tmp_path: Path):
     assert recognition.model_dir == Path.home() / "models/gigaam"
     assert recognition.intra_op_threads == 6
     assert recognition.max_utterance_seconds == 20
+
+
+@pytest.mark.parametrize("previous_model", ["sonnet", "opus[1m]", "claude-haiku-4-5"])
+def test_old_claude_settings_select_codex_default_and_preserve_user_file(tmp_path, previous_model):
+    path = tmp_path / "settings.toml"
+    text = (
+        f'[meeting]\nmodel = "{previous_model}"\neffort = "medium"\n'
+        '\n[programs]\nclaude = "/tmp/old-claude"\n'
+    )
+    path.write_text(text, encoding="utf-8")
+
+    settings = load_settings(path)
+
+    assert (settings.meeting.model, settings.meeting.effort) == ("gpt-6.2-astra", "high")
+    assert settings.programs.codex == str(Path.home() / ".local/bin/codex")
+    assert path.read_text(encoding="utf-8") == text

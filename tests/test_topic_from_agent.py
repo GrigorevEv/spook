@@ -15,6 +15,7 @@ def note_names(spook) -> list[str]:
 
 
 def finished_meeting(spook, topic: str = "") -> Path:
+    spook.agent.play("fail")
     spook.recognizer.say("Лидер рассылает записи журнала.")
     assert spook.start_meeting(topic=topic).status_code == 200
     with spook.events() as events:
@@ -61,7 +62,7 @@ def test_topic_command_renames_finished_note_without_topic_prints_new_path_and_p
     assert "2026-11-06 14-02 Встреча" not in page
 
 
-def test_agent_that_reports_topic_and_writes_summary_at_new_path_gives_done_under_new_name(spook):
+def test_spook_saves_agent_reply_and_reports_done_under_new_topic(spook):
     spook.agent.play("topic")
     spook.recognizer.say("Лидер рассылает записи журнала.")
     spook.start_meeting()
@@ -76,7 +77,9 @@ def test_agent_that_reports_topic_and_writes_summary_at_new_path_gives_done_unde
     assert new_name in agent.data and "ошибка" not in agent.data
     assert note_names(spook) == [f"{new_name}.md"]
     assert "## Суть" in (spook.meetings_dir / f"{new_name}.md").read_text(encoding="utf-8")
-    assert [call["argv"][1] for call in spook.agent.calls()] == [f"/spook-meeting {spook.meetings_dir / NOTE_WITHOUT_TOPIC}"]
+    [call] = spook.agent.calls()
+    assert call["input"]["topic"] == ""
+    assert call["input"]["transcript"].strip() == "**14:02 Собеседники:** Лидер рассылает записи журнала."
     assert [path.name for path in (spook.state_dir / "agent" / "meeting").iterdir()] == [f"{new_name}.log"]
     journal = spook.http.get(f"{spook.base_url}/agent/log", params={"note": new_name})
     assert journal.status_code == 200

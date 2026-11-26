@@ -72,7 +72,7 @@ def test_screen_shows_running_for_first_note_and_queued_for_second_then_both_don
     spook.wait_until(lambda: len(spook.agent.calls()) == 2)
     spook.agent.release()
     spook.wait_until(lambda: jobs_on_screen(spook) == {FIRST_NOTE: ShownJob("готово"), SECOND_NOTE: ShownJob("готово")})
-    assert [call["argv"][1] for call in spook.agent.calls()] == [
-        f"/spook-meeting {spook.meetings_dir / FIRST_NOTE}.md",
-        f"/spook-meeting {spook.meetings_dir / SECOND_NOTE}.md",
+    assert [call["input"]["transcript"].strip() for call in spook.agent.calls()] == [
+        "**14:02 Собеседники:** Первая встреча.",
+        "**15:02 Собеседники:** Вторая встреча.",
     ]

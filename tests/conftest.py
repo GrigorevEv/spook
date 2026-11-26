@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import socket
 import subprocess
 import sys
@@ -45,6 +46,13 @@ NOTE_AFTER_START = (
 
 def note_text(spook: "Service") -> str:
     return (spook.meetings_dir / "2026-11-06 14-02 Встреча.md").read_text(encoding="utf-8")
+
+
+def agent_model_and_effort(call: dict) -> tuple[str, str]:
+    args = call["argv"]
+    model = args[args.index("--model") + 1]
+    [setting] = [arg for arg in args if arg.startswith("model_reasoning_effort=")]
+    return model, json.loads(setting.split("=", 1)[1])
 
 
 def free_port() -> int:
@@ -145,7 +153,7 @@ class Service:
     wiki_dir: Path
     meetings_dir: Path
     state_dir: Path
-    claude_config_dir: Path
+    skills_dir: Path
     audio: AudioInput
     recognizer: Recognizer
     clock: ManualClock
@@ -159,12 +167,13 @@ class Service:
     @property
     def programs(self) -> dict[str, str]:
         return {
-            "claude": str(self.agent.path),
+            "codex": str(self.agent.path),
             "notify": str(self.notify.path),
             "open": str(self.opener.path),
         }
 
     def write_settings(self, **overrides) -> None:
+        overrides.setdefault("agent", {}).setdefault("skills_dir", str(self.skills_dir))
         overrides.setdefault("meetings_dir", self.meetings_dir)
         overrides.setdefault("terms_dictionary", self.settings.terms_dictionary)
         write_settings(
@@ -279,12 +288,14 @@ def spook(
     meetings_dir = tmp_path / "notes" / "работа"
     state_dir = tmp_path / "state" / "spook"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    claude_config_dir = tmp_path / "claude-config"
-    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_config_dir))
-    agent = StubProgram.create(tmp_path / "stubs", "claude")
+    skills_dir = tmp_path / "skills"
+    skill = Path(__file__).resolve().parents[1] / "skills" / "spook-meeting"
+    shutil.copytree(skill, skills_dir / skill.name)
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    agent = StubProgram.create(tmp_path / "stubs", "codex")
     notify = StubProgram.create(tmp_path / "stubs", "notify")
     opener = StubProgram.create(tmp_path / "stubs", "open")
-    programs = {"claude": str(agent.path), "notify": str(notify.path), "open": str(opener.path)}
+    programs = {"codex": str(agent.path), "notify": str(notify.path), "open": str(opener.path)}
     write_settings(
         settings_path,
         free_port(),
@@ -292,15 +303,17 @@ def spook(
         programs=programs,
         meetings_dir=meetings_dir,
         terms_dictionary=meetings_dir.parent / "Словарь терминов.md",
+        agent={"skills_dir": str(skills_dir)},
     )
     settings = load_settings(settings_path)
 
     def load_stubbed_settings() -> Settings:
         loaded = load_settings(settings_path)
         programs = loaded.programs
-        for program in (programs.claude, programs.notify, programs.open):
+        for program in (programs.codex, programs.notify, programs.open):
             assert Path(program).is_relative_to(tmp_path), f"внешняя программа вне заглушек: {program}"
         assert loaded.terms_dictionary.is_relative_to(tmp_path), "Словарь терминов вне временного каталога"
+        assert loaded.agent.skills_dir.is_relative_to(tmp_path), "Скиллы вне временного каталога"
         return loaded
 
     def build_app(audio: AudioInput, recognizer: Recognizer, clock: ManualClock):
@@ -357,7 +370,7 @@ def spook(
             wiki_dir=wiki_dir,
             meetings_dir=meetings_dir,
             state_dir=state_dir,
-            claude_config_dir=claude_config_dir,
+            skills_dir=skills_dir,
             audio=audio,
             recognizer=recognizer,
             clock=clock,

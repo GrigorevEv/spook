@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import Page, expect
 
-from conftest import speech
+from conftest import agent_model_and_effort, speech
 
 pytestmark = pytest.mark.browser
 
@@ -39,16 +39,16 @@ def test_notes_screen_shows_summary_state_opens_agent_log_and_restarts_agent_onl
     screenshot(page, "заметки")
 
     row.get_by_role("link", name="Журнал").click()
-    expect(page.locator("body")).to_contain_text("Заглушка Агента: Выжимка написана.")
+    expect(page.locator("body")).to_contain_text("Выжимка: готово")
     page.go_back()
 
     row = row_of(page, "Репликация в Raft")
     row.get_by_text("Перезапустить Агента").click()
     expect(row).to_contain_text("Выжимка будет написана заново")
-    row.get_by_label("Модель").select_option("haiku")
+    row.get_by_label("Модель").select_option("gpt-6.2-sol")
     row.get_by_label("Effort").select_option("low")
     understood = row.get_by_role("checkbox", name="понимаю, запустить заново")
-    spook.agent.play("wait")
+    spook.agent.play("wait-updated")
 
     row.get_by_role("button", name="Запустить").click()
 
@@ -65,33 +65,32 @@ def test_notes_screen_shows_summary_state_opens_agent_log_and_restarts_agent_onl
     expect(row).to_contain_text("готово")
     expect(row.get_by_text("Перезапустить Агента")).to_be_visible()
     screenshot(page, "заметки-после-перезапуска")
-    note = spook.meetings_dir / f"{NOTE_NAME}.md"
-    launches = [call["argv"][:6] for call in spook.agent.calls()]
-    assert launches == [
-        ["-p", f"/spook-meeting {note}", "--model", "opus", "--effort", "high"],
-        ["-p", f"/spook-meeting {note}", "--model", "haiku", "--effort", "low"],
+    assert [agent_model_and_effort(call) for call in spook.agent.calls()] == [
+        ("gpt-6.2-astra", "high"), ("gpt-6.2-sol", "low")
     ]
+    note = spook.meetings_dir / f"{NOTE_NAME}.md"
+    assert "Выжимка обновлена." in note.read_text(encoding="utf-8")
 
 
 def test_settings_screen_saves_auto_stop_and_meeting_model_and_rejects_invalid_value_with_reason(spook, page, screenshot):
     page.goto(f"{spook.base_url}/settings")
     meeting = page.get_by_role("region", name="Встреча")
     auto_stop = page.get_by_role("textbox", name="Минут тишины до автостопа")
-    expect(meeting.get_by_role("combobox", name="Модель Агента")).to_have_value("opus")
+    expect(meeting.get_by_role("combobox", name="Модель Агента")).to_have_value("gpt-6.2-astra")
     expect(auto_stop).to_have_value("5")
 
-    meeting.get_by_role("combobox", name="Модель Агента").fill("sonnet")
+    meeting.get_by_role("combobox", name="Модель Агента").fill("gpt-6.2-sol")
     auto_stop.fill("2,5")
     page.get_by_role("button", name="Сохранить").click()
 
     expect(page.get_by_role("status")).to_contain_text("Настройки сохранены")
     page.reload()
-    expect(meeting.get_by_role("combobox", name="Модель Агента")).to_have_value("sonnet")
+    expect(meeting.get_by_role("combobox", name="Модель Агента")).to_have_value("gpt-6.2-sol")
     expect(page.get_by_role("region", name="Лекция")).to_have_count(0)
     expect(auto_stop).to_have_value("2.5")
     saved = spook.settings_path.read_bytes()
 
-    meeting.get_by_role("combobox", name="Модель Агента").fill("haiku")
+    meeting.get_by_role("combobox", name="Модель Агента").fill("gpt-6.2-astra")
     auto_stop.fill("пять")
     page.get_by_role("button", name="Сохранить").click()
 
@@ -103,5 +102,5 @@ def test_settings_screen_saves_auto_stop_and_meeting_model_and_rejects_invalid_v
     screenshot(page, "настройки-отказ")
     assert spook.settings_path.read_bytes() == saved
     page.goto(f"{spook.base_url}/settings")
-    expect(meeting.get_by_role("combobox", name="Модель Агента")).to_have_value("sonnet")
+    expect(meeting.get_by_role("combobox", name="Модель Агента")).to_have_value("gpt-6.2-sol")
     expect(auto_stop).to_have_value("2.5")
